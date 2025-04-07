@@ -14,22 +14,23 @@ class Trader(mesa.Agent):
         self.cash = round(self.model.wealth_min * (1 + np.random.pareto(self.model.wealth_alpha)))
 
         # risk aversion
-        self.ra = round(normal(0.5, 0.1), 2)
+        self.risk_aversion = round(normal(0.5, 0.1), 2)
+        self.risk_appetit = round(1 - self.risk_aversion, 2)
 
-        self.starting_share_alloc_cash = ((1 - self.ra) + getRandomUniform(-0.1, 0.1)) * self.cash
+        self.starting_share_alloc_cash = (self.risk_appetit + getRandomUniform(-0.1, 0.1)) * self.cash
 
         self.num_of_shares = round(self.starting_share_alloc_cash / self.model.get_market_price())
 
         self.wealth = self.cash + self.num_of_shares * self.model.get_market_price()  # Example wealth calculation
 
         # skill
-        self.skill = round(normal(0.5, 0.1), 2)
+        self.skill = round(normal(0.5, 0.2), 2)
 
         # valuation bias
-        self.vb = round(1 + normal(0.1 - 0.1 * self.skill, 0.05), 2)
+        self.vb = round(1 + normal(0.1 - 0.1 * self.skill, 0.05), 4)
 
         # overconfidence
-        self.oc = round(normal(0.5, 0.05), 2)
+        self.oc = round(normal(0.5 - 0.5 * self.skill, 0.05), 2)
 
         # greek alpha
         self.est_v = 0
@@ -38,7 +39,7 @@ class Trader(mesa.Agent):
               ================================= 
               Cash: {self.cash}, 
               Num of shares: {self.num_of_shares},
-              Risk aversion: {self.ra}, 
+              Risk aversion: {self.risk_aversion}, risk appetite: {self.risk_appetit}, 
               Valuation Bias: {self.vb}, 
               Overconfidence: {self.oc},
               Skill: {self.skill}, 

@@ -48,10 +48,10 @@ class LimitOrderMarket(mesa.Model):
 
         print(f"""LOM 
               ================================
-                initial market price: {self.initial_market_price},
-                current_v: {self.current_v}, 
-                number of agents: {self.num_agents}, 
-                number of days: {self.n_days}""")
+              initial market price: {self.initial_market_price},
+              current_v: {self.current_v}, 
+              number of agents: {self.num_agents}, 
+              number of days: {self.n_days}""")
       
 
         Trader.create_agents(model=self, n=num_agents)
@@ -63,17 +63,18 @@ class LimitOrderMarket(mesa.Model):
         self.markov_price_step()
 
         # Fundamentalwert aktualisieren
-        if poisson(0.1):
-            shock = lognormal(0, 0.1)
-            print(f"Shock applied: {shock}")
-            self.current_v *= (1 + shock if random.random() < 0.5 else 1 - shock)
-            print(f"Updated current_v: {self.current_v}")
+        if poisson(0.2):
+            old_price = self.current_v
+            shock = lognormal(0, 0.2)
+            # print(f"Shock applied: {shock}")
+            self.current_v += round(shock if random.random() < 0.5 else -1 * shock)
+            print(f"Shock applied: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.2%}")
 
         # Liquiditätsereignisse
         for agent in self.agents:
             if poisson(0.05):
-                cash_change = normal(0, 10)
-                agent.cash += cash_change
+                cash_change = round(normal(100, 10))
+                agent.cash += cash_change * random.choice([-1, 1])
                 print(f"Agent {agent.unique_id} cash updated by {cash_change}. New cash: {agent.cash}")
 
         self.agents.shuffle_do("step")
@@ -103,7 +104,9 @@ class LimitOrderMarket(mesa.Model):
         mu = 100
         phi = 0.95
         sigma = 1.0
-        self.current_v = mu + phi * (self.current_v - mu) + np.random.normal(0, sigma)
+        old_price = self.current_v
+        self.current_v = round(mu + phi * (self.current_v - mu) + np.random.normal(0, sigma), 2)
+        print(f"Markov price step: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.4%}")
 
     def run_model(self):
         for _ in range(self.n_days):
