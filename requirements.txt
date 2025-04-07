@@ -1,0 +1,4 @@
+mesa
+numpy
+scipy
+searborn
