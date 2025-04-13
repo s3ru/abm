@@ -1,8 +1,15 @@
+from enum import Enum
 from typing import List
 import uuid
 from datetime import datetime
 
-from transaction import Transaction
+
+class OrderStatus(Enum):
+    FILLED = "Filled"
+    PARTIALLY_FILLED = "Partially Filled"
+    CANCELED = "Canceled"
+    OPEN = "Open"
+
 
 class LimitOrder:
     def __init__(self, trader_id: int, price: float, quantity: int, trading_day: int):
@@ -23,11 +30,12 @@ class LimitOrder:
         self.trading_day = trading_day
         self.timestamp = datetime.now()
         self.direct_execution = False
-        self.transactions = List[Transaction] = [] 
+        self.transactions = [] 
+        self.is_canceled = False
 
     def __repr__(self):
         return (f"LimitOrder(order_id={self.order_id}, trader_id={self.trader_id}, "
-                f"order_type={self.order_type}, price={self.price}, "
+                f"order_type={self.get_order_type()}, price={self.limit_price}, "
                 f"quantity={self.quantity}, timestamp={self.timestamp})")
             
     def get_order_type(self):
@@ -42,3 +50,35 @@ class LimitOrder:
             return self.quantity - sum_of_transactions 
         else:
             return self.quantity + sum_of_transactions
+        
+    def get_status(self):
+        if self.is_canceled:
+            return OrderStatus.CANCELED
+        elif self.get_quantity_unfilled() == 0:
+            return OrderStatus.FILLED
+        elif self.get_quantity_unfilled() < self.quantity:
+            return OrderStatus.PARTIALLY_FILLED
+        else:
+            return OrderStatus.OPEN
+
+class Transaction:
+    def __init__(self, price: float, volume: float, buyer_order: LimitOrder, seller_order: LimitOrder, trading_day: int):
+        """
+        Represents a transaction in the market.
+
+        :param price: The transaction price.
+        :param volume: The volume of the transaction.
+        :param buyer_id: The ID of the buyer.
+        :param seller_id: The ID of the seller.
+        :param trading_day: The trading_day of the transaction.
+        """
+        self.price = price
+        self.volume = volume
+        self.buyer_order = buyer_order
+        self.seller_order = seller_order
+        self.trading_day = trading_day
+
+    def __repr__(self) -> str:
+        return (f"Transaction(price={self.price}, volume={self.volume}, "
+                f"buyer_id={self.buyer_order.trader_id}, seller_id={self.seller_order.trader_id}, "
+                f"trading_day={self.trading_day})")

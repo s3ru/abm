@@ -11,7 +11,7 @@ import pandas as pd
 import seaborn as sns
 
 import mesa
-from typing import Dict, List, Callable
+from typing import Dict, List
 from helper import lognormal, normal, poisson
 
 from mesa.datacollection import DataCollector
@@ -19,13 +19,12 @@ import numpy as np
 import random
 import math
 
-from limit_order import LimitOrder
+from limit_order import LimitOrder, OrderStatus, Transaction
 from trader import Trader
-from transaction import Transaction
 import copy
 
 class LimitOrderMarket(mesa.Model):
-    def __init__(self, num_agents: int = 100, n_days: int = 100, decision_threshold = 0.05) -> None:
+    def __init__(self, num_agents: int = 100, n_days: int = 100, decision_threshold = 0.05, order_expiration = 10) -> None:
         super().__init__(seed=None)
         # wealth
         self.wealth_alpha = 2.0       # shape
@@ -33,13 +32,13 @@ class LimitOrderMarket(mesa.Model):
 
         self.num_agents: int = num_agents
         self.current_day: int = 0
-            
-
+        self.decision_threshold: float = decision_threshold
+        self.order_expiration: int = order_expiration
         self.n_days: int = n_days
         self.current_v: float = 100.0
         self.initial_market_price: float = round(normal(self.current_v, 40))
-        self.lob: List[LimitOrder] = []  # List of LimitOrder objects
-        self.transactions: List[Transaction] = []  # List of transactions (price, volume)
+        self.lob: List[LimitOrder] = [] # List of LimitOrder objects
+        self.transactions: List[Transaction] = [] # List of transactions (price, volume)
         self.volumes: Dict[int, float] = {}  # List of volumes
         self.information_events: List[bool] = []  # List of information events
         self.data_collector = DataCollector(
@@ -62,7 +61,7 @@ class LimitOrderMarket(mesa.Model):
 
     def step(self) -> None:
         print(f"Starting step {self.current_day}...")
-
+        self.set_orders_expired()
         self.markov_price_step()
 
         # Fundamentalwert aktualisieren
@@ -91,16 +90,23 @@ class LimitOrderMarket(mesa.Model):
         print(f"Step {self.current_day} completed.")
 
     def get_market_price(self) -> float:
-        if self.lob and len(self.get_sell_orders) > 0 and len(self.get_buy_orders) > 0:
+        if len(self.get_sell_orders()) > 0 and len(self.get_buy_orders()) > 0:
             return self.get_ask_quote_lob().price + self.get_bid_quote_lob().price / 2
         else:
             return self.initial_market_price
 
     def evaluate_efficiency(self):
-        prices = self.data_collector.get_model_vars_dataframe()["MarketPrice"].values
-        true_vals = self.data_collector.get_model_vars_dataframe()["TrueValue"].values
+        prices = self.data_collector.get_model_vars_dataframe()["market_price"].values
+        true_vals = self.data_collector.get_model_vars_dataframe()["true_value"].values
         avg_deviation = np.mean(np.abs(prices - true_vals))
         print(f"Durchschnittliche Abweichung Marktpreis vs. fundamentaler Wert: {avg_deviation:.2f}")
+
+    def set_orders_expired(self):
+        for order in self.lob:
+            if order.get_status() == OrderStatus.OPEN or order.get_status() and (self.current_day - order.trading_day) > self.order_expiration:
+                order.is_canceled = True
+                print(f"Order {order.order_id} expired and canceled.")
+                self.lob.remove(order)
 
     def process_order(self, order: LimitOrder) -> None:
         """
@@ -114,10 +120,10 @@ class LimitOrderMarket(mesa.Model):
                     if buy_order.get_quantity_unfilled() == 0:
                         break
 
-                    if sell_order.price < buy_order.price:
+                    if sell_order.limit_price < buy_order.limit_price:
                         # Execute transaction
                         transaction = Transaction(
-                            price=sell_order.price,
+                            price=sell_order.limit_price,
                             volume=min(order.get_quantity_unfilled(), sell_order.get_quantity_unfilled()),
                             buyer_order= copy.copy(buy_order),
                             seller_order= copy.copy(sell_order),
@@ -127,6 +133,14 @@ class LimitOrderMarket(mesa.Model):
                         print(f"Transaction executed: {transaction}")
                         sell_order.transactions.append(transaction)
                         buy_order.transactions.append(transaction)
+
+                        buyer = self.agents.get(buy_order.trader_id, None)
+                        buyer.num_of_shares += transaction.volume
+                        buyer.cash -= transaction.volume * transaction.price
+
+                        seller = self.agents.get(sell_order.trader_id, None)
+                        seller.num_of_shares -= transaction.volume
+                        seller.cash += transaction.volume * transaction.price
        
                         if sell_order.quantity == 0:
                             self.lob.remove(sell_order)
@@ -143,10 +157,10 @@ class LimitOrderMarket(mesa.Model):
                     if sell_order.get_quantity_unfilled() == 0:
                         break
 
-                    if buy_order.price > sell_order.price:
+                    if buy_order.limit_price > sell_order.limit_price:
                         # Execute transaction
                         transaction = Transaction(
-                            price=buy_order.price,
+                            price=buy_order.limit_price,
                             volume=min(order.get_quantity_unfilled(), buy_order.get_quantity_unfilled()),
                             buyer_order= copy.copy(buy_order),
                             seller_order= copy.copy(sell_order),
@@ -156,6 +170,15 @@ class LimitOrderMarket(mesa.Model):
                         print(f"Transaction executed: {transaction}")
                         buy_order.transactions.append(transaction)
                         sell_order.transactions.append(transaction)
+
+                        buyer = self.agents.get(buy_order.trader_id, None)
+                        buyer.num_of_shares += transaction.volume
+                        buyer.cash -= transaction.volume * transaction.price
+
+                        seller = self.agents.get(sell_order.trader_id, None)
+                        seller.num_of_shares -= transaction.volume
+                        seller.cash += transaction.volume * transaction.price
+
 
                         if buy_order.quantity == 0:
                             self.lob.remove(buy_order)
@@ -177,7 +200,7 @@ class LimitOrderMarket(mesa.Model):
         """
         buy_orders = [order for order in self.lob if order.get_order_type() == "buy"]
         buy_orders.sort(key=lambda x: (-x.price, x.timestamp))
-        print(f"Buy orders in LOB: {buy_orders}")
+        # print(f"Buy orders in LOB: {buy_orders}")
         return buy_orders
     
     def get_sell_orders(self):
@@ -186,7 +209,7 @@ class LimitOrderMarket(mesa.Model):
         """
         sell_orders = [order for order in self.lob if order.get_order_type() == "sell"]
         sell_orders.sort(key=lambda x: (x.price, x.timestamp))
-        print(f"Sell orders in LOB: {sell_orders}")
+        # print(f"Sell orders in LOB: {sell_orders}")
         return sell_orders
 
     def get_bid_quote_lob(self): 
@@ -197,7 +220,7 @@ class LimitOrderMarket(mesa.Model):
         if len(buy_orders) > 0:
             # Sort orders by price and then by timestamp
             best_bid = self.lob[0]
-            print(f"Best bid in LOB: {best_bid}")
+            # print(f"Best bid in LOB: {best_bid}")
             return best_bid
         else:
             return self.get_market_price() - 0.50
@@ -214,7 +237,7 @@ class LimitOrderMarket(mesa.Model):
             # Sort orders by price and then by timestamp
             
             best_ask = self.lob[0]
-            print(f"Best ask in LOB: {best_ask}")
+            # print(f"Best ask in LOB: {best_ask}")
             return best_ask.price
         else:
             return self.get_market_price() + 0.50
