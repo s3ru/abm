@@ -66,7 +66,7 @@ class Trader(mesa.Agent):
 
     def estimate_true_value(self):
         # Example logic for estimating the true value
-        self.estimated_true_value = min(0.01, self.model.get_market_price() * self.valuation_bias)
+        self.estimated_true_value = max(0.01, self.model.get_market_price() * self.valuation_bias)
         # print(f"Trader {self.unique_id} estimated true value: {self.estimated_true_value}")
 
     def get_portfolio_share_stocks(self):
@@ -135,31 +135,38 @@ class Trader(mesa.Agent):
         if not is_buy_order and abs(num_of_stocks) > self.num_of_shares:
             num_of_stocks = round(self.num_of_shares)
 
-        min_order_size = 1 if is_buy_order else -1
 
         if self.risk_appetit <= 0.25:
-            num_of_stocks = max(min_order_size, round(num_of_stocks / 5))
+            num_of_stocks = max(1, round(num_of_stocks / 5))
         if self.risk_appetit > 0.25 and self.risk_appetit <= 0.5:
-            num_of_stocks = max(min_order_size, round(num_of_stocks / 4))
+            num_of_stocks = max(1, round(num_of_stocks / 4))
         # e.g. risk appetite 0.5 - 0.7 divided by 4, min order size 1
         if self.risk_appetit > 0.5 and self.risk_appetit <= 0.75:
-            num_of_stocks = max(min_order_size, round(num_of_stocks / 3))
+            num_of_stocks = max(1, round(num_of_stocks / 3))
         # e.g. risk appetite 0.7 - 0.9 divided by 6, min order size 1
         elif self.risk_appetit > 0.75 and self.risk_appetit <= 1:
-            num_of_stocks = max(min_order_size, round(num_of_stocks / 2))
+            num_of_stocks = max(1, round(num_of_stocks / 2))
 
-        return num_of_stocks
+        return abs(num_of_stocks) * (1 if is_buy_order else -1)  # Return positive for buy, negative for sell
 
 
     def get_limit_price(self, order_type):
         """
         Returns the limit price for the order.
         """
-        margin_of_safety = self.risk_aversion / 10
+    
+        market_price = 0
+
         if order_type == "buy":
-            return round(self.estimated_true_value * (1 - margin_of_safety), 2)
+            market_price = self.model.get_ask_quote_lob()
         else:
-            return round(self.estimated_true_value * (1 + margin_of_safety), 2)
+            market_price = self.model.get_bid_quote_lob()
+
+        diff_price = abs(self.estimated_true_value - market_price)
+        return round(market_price + diff_price * self.risk_aversion * (1 if order_type == "buy" else -1), 2)
+
+
+        
 
 
     # def make_decision(self):

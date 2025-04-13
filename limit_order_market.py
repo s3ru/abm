@@ -36,7 +36,7 @@ class LimitOrderMarket(mesa.Model):
         self.order_expiration: int = order_expiration
         self.n_days: int = n_days
         self.current_v: float = 100.0
-        self.initial_market_price: float = round(normal(self.current_v, 40))
+        self.initial_market_price: float = round(normal(self.current_v, 10))
         self.lob: List[LimitOrder] = [] # List of LimitOrder objects
         self.transactions: List[Transaction] = [] # List of transactions (price, volume)
         self.volumes: Dict[int, float] = {}  # List of volumes
@@ -60,18 +60,18 @@ class LimitOrderMarket(mesa.Model):
 
 
     def step(self) -> None:
-        print(f"Starting step {self.current_day}...")
+        # print(f"Starting step {self.current_day}...")
         self.set_orders_expired()
         self.markov_price_step()
 
         # Fundamentalwert aktualisieren
         if poisson(0.2):
             self.information_events.append(True)
-            old_price = self.current_v
+            # old_price = self.current_v
             shock = lognormal(0, 0.2)
             # print(f"Shock applied: {shock}")
             self.current_v += round(shock if random.random() < 0.5 else -1 * shock)
-            print(f"Shock applied: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.2%}")
+            # print(f"Shock applied: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.2%}")
         else:
             self.information_events.append(False)
 
@@ -80,14 +80,14 @@ class LimitOrderMarket(mesa.Model):
             if poisson(0.05):
                 cash_change = round(normal(100, 10))
                 agent.cash += cash_change * random.choice([-1, 1])
-                print(f"Agent {agent.unique_id} cash updated by {cash_change}. New cash: {agent.cash}")
+                # print(f"Agent {agent.unique_id} cash updated by {cash_change}. New cash: {agent.cash}")
 
         self.agents.shuffle_do("step")
 
         self.data_collector.collect(self)
 
         self.current_day += 1
-        print(f"Step {self.current_day} completed.")
+        # print(f"Step {self.current_day} completed.")
 
     def get_market_price(self) -> float:
         if len(self.get_sell_orders()) > 0 and len(self.get_buy_orders()) > 0:
@@ -105,7 +105,7 @@ class LimitOrderMarket(mesa.Model):
         for order in self.lob:
             if order.get_status() == OrderStatus.OPEN or order.get_status() and (self.current_day - order.trading_day) > self.order_expiration:
                 order.is_canceled = True
-                print(f"Order {order.order_id} expired and canceled.")
+                # print(f"Order {order.order_id} expired and canceled.")
                 self.lob.remove(order)
 
     def process_order(self, order: LimitOrder) -> None:
@@ -120,11 +120,11 @@ class LimitOrderMarket(mesa.Model):
                     if buy_order.get_quantity_unfilled() == 0:
                         break
 
-                    if sell_order.limit_price < buy_order.limit_price:
+                    if sell_order.limit_price <= buy_order.limit_price:
                         # Execute transaction
                         transaction = Transaction(
                             price=sell_order.limit_price,
-                            volume=min(order.get_quantity_unfilled(), sell_order.get_quantity_unfilled()),
+                            volume=min(abs(order.get_quantity_unfilled()), abs(sell_order.get_quantity_unfilled())),
                             buyer_order= copy.copy(buy_order),
                             seller_order= copy.copy(sell_order),
                             trading_day=self.current_day
@@ -134,11 +134,11 @@ class LimitOrderMarket(mesa.Model):
                         sell_order.transactions.append(transaction)
                         buy_order.transactions.append(transaction)
 
-                        buyer = self.agents.get(buy_order.trader_id, None)
+                        buyer =  self.find_trader_by_id(buy_order.trader_id)
                         buyer.num_of_shares += transaction.volume
                         buyer.cash -= transaction.volume * transaction.price
 
-                        seller = self.agents.get(sell_order.trader_id, None)
+                        seller = self.find_trader_by_id(sell_order.trader_id)
                         seller.num_of_shares -= transaction.volume
                         seller.cash += transaction.volume * transaction.price
        
@@ -147,6 +147,7 @@ class LimitOrderMarket(mesa.Model):
 
             if buy_order.get_quantity_unfilled() > 0:
                 # Add the order to the LOB
+                # print(f"Adding buy order to LOB: {buy_order}")
                 self.lob.append(buy_order)
 
         elif order.get_order_type() == "sell":
@@ -157,11 +158,11 @@ class LimitOrderMarket(mesa.Model):
                     if sell_order.get_quantity_unfilled() == 0:
                         break
 
-                    if buy_order.limit_price > sell_order.limit_price:
+                    if buy_order.limit_price >= sell_order.limit_price:
                         # Execute transaction
                         transaction = Transaction(
                             price=buy_order.limit_price,
-                            volume=min(order.get_quantity_unfilled(), buy_order.get_quantity_unfilled()),
+                            volume=min(abs(order.get_quantity_unfilled()), abs(buy_order.get_quantity_unfilled())),
                             buyer_order= copy.copy(buy_order),
                             seller_order= copy.copy(sell_order),
                             trading_day=self.current_day
@@ -171,11 +172,11 @@ class LimitOrderMarket(mesa.Model):
                         buy_order.transactions.append(transaction)
                         sell_order.transactions.append(transaction)
 
-                        buyer = self.agents.get(buy_order.trader_id, None)
+                        buyer =  self.find_trader_by_id(buy_order.trader_id)
                         buyer.num_of_shares += transaction.volume
                         buyer.cash -= transaction.volume * transaction.price
 
-                        seller = self.agents.get(sell_order.trader_id, None)
+                        seller = self.find_trader_by_id(sell_order.trader_id)
                         seller.num_of_shares -= transaction.volume
                         seller.cash += transaction.volume * transaction.price
 
@@ -183,12 +184,20 @@ class LimitOrderMarket(mesa.Model):
                         if buy_order.quantity == 0:
                             self.lob.remove(buy_order)
 
-        
+            if sell_order.get_quantity_unfilled() > 0:
+                # Add the order to the LOB
+                # print(f"Adding sell order to LOB: {sell_order}")
+                self.lob.append(sell_order)
             return
             
-
-        self.lob.append(order)
-        print(f"Order accepted: {order}")
+    def find_trader_by_id(self, agent_id: int) -> Trader:
+        """
+        Finds an agent by its unique ID.
+        """
+        agent_set = self.agents.select(lambda a: a.unique_id == agent_id, 1)
+        return agent_set[0]
+        
+        
 
     def get_volume_current_trading_day(self) -> float:
         self.transactions_today = [transaction for transaction in self.transactions if transaction.trading_day == self.current_day]
@@ -198,8 +207,8 @@ class LimitOrderMarket(mesa.Model):
         """
         Returns all buy orders from the limit order book (LOB).
         """
-        buy_orders = [order for order in self.lob if order.get_order_type() == "buy"]
-        buy_orders.sort(key=lambda x: (-x.price, x.timestamp))
+        buy_orders = [order for order in self.lob if order.get_order_type() == "buy" and (order.get_status() == OrderStatus.OPEN or order.get_status() == OrderStatus.PARTIALLY_FILLED)]
+        buy_orders.sort(key=lambda x: (-x.limit_price, x.timestamp))
         # print(f"Buy orders in LOB: {buy_orders}")
         return buy_orders
     
@@ -207,8 +216,8 @@ class LimitOrderMarket(mesa.Model):
         """
         Returns all sell orders from the limit order book (LOB).
         """
-        sell_orders = [order for order in self.lob if order.get_order_type() == "sell"]
-        sell_orders.sort(key=lambda x: (x.price, x.timestamp))
+        sell_orders = [order for order in self.lob if order.get_order_type() == "sell" and (order.get_status() == OrderStatus.OPEN or order.get_status() == OrderStatus.PARTIALLY_FILLED)]
+        sell_orders.sort(key=lambda x: (x.limit_price, x.timestamp))
         # print(f"Sell orders in LOB: {sell_orders}")
         return sell_orders
 
@@ -221,7 +230,7 @@ class LimitOrderMarket(mesa.Model):
             # Sort orders by price and then by timestamp
             best_bid = self.lob[0]
             # print(f"Best bid in LOB: {best_bid}")
-            return best_bid
+            return best_bid.limit_price
         else:
             return self.get_market_price() - 0.50
         
@@ -238,7 +247,7 @@ class LimitOrderMarket(mesa.Model):
             
             best_ask = self.lob[0]
             # print(f"Best ask in LOB: {best_ask}")
-            return best_ask.price
+            return best_ask.limit_price
         else:
             return self.get_market_price() + 0.50
 
@@ -248,7 +257,7 @@ class LimitOrderMarket(mesa.Model):
         sigma = 1.0
         old_price = self.current_v
         self.current_v = round(mu + phi * (self.current_v - mu) + np.random.normal(0, sigma), 2)
-        print(f"Markov price step: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.4%}")
+        # print(f"Markov price step: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.4%}")
 
     def run_model(self):
         for _ in range(self.n_days):
