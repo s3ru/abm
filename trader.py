@@ -157,9 +157,9 @@ class Trader(mesa.Agent):
         """
         margin_of_safety = self.risk_aversion / 10
         if order_type == "buy":
-            return self.estimated_true_value * (1 - margin_of_safety)
+            return round(self.estimated_true_value * (1 - margin_of_safety), 2)
         else:
-            return self.estimated_true_value * (1 + margin_of_safety)
+            return round(self.estimated_true_value * (1 + margin_of_safety), 2)
 
 
     # def make_decision(self):
