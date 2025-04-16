@@ -22,6 +22,8 @@ from limit_order import LimitOrder, OrderStatus, Transaction
 from trader import Trader
 import copy
 
+from viz import create_viz
+
 class LimitOrderMarket(mesa.Model):
     def __init__(
             self,
@@ -36,9 +38,7 @@ class LimitOrderMarket(mesa.Model):
             event_info_intensity = 0.5,
             event_liquidity_frequency = 0.05,
             event_liquidity_intensity = 1000,
-            starting_phase = 5,
-    
-            
+            # starting_phase = 5,
         ) -> None:
         super().__init__(seed=None)
         # wealth
@@ -57,19 +57,22 @@ class LimitOrderMarket(mesa.Model):
         self.decision_threshold: float = decision_threshold
         self.order_expiration: int = order_expiration
         self.n_days: int = n_days
+        # self.starting_phase: int = starting_phase
         self.current_v: float = start_true_value
         self.initial_market_price: float = round(normal(self.current_v, 5))
-        print(f"Initial market price: {self.initial_market_price}")
+        # print(f"Initial market price: {self.initial_market_price}")
 
         self.lob: List[LimitOrder] = [] # List of LimitOrder objects
         self.transactions: List[Transaction] = [] # List of transactions (price, volume)
         self.volumes: Dict[int, float] = {}  # List of volumes
-        self.information_events: List[bool] = [False] * n_days  # List of information events
+        self.information_events: List[bool] = []  # List of information events
         self.last_market_price: float = self.initial_market_price
-        self.data_collector = DataCollector(
+        self.info_event_occurred: bool = False
+        self.datacollector = DataCollector(
             model_reporters={
-                             "trading_day": lambda m: m.current_day - starting_phase,
+                             "trading_day": lambda m: m.current_day,
                              "market_price": lambda m: m.get_market_price(),
+                             "info_event":  lambda m: m.info_event_occurred,
                              "true_value": lambda m: m.current_v,
                              "bid_ask_spread": lambda m: m.get_bid_ask_spread(),
                              "volume": lambda m: m.get_volume_current_trading_day()},
@@ -88,7 +91,7 @@ class LimitOrderMarket(mesa.Model):
 
 
     def step(self) -> None:
-        print(f"Starting step {self.current_day}...")
+        # print(f"Starting step {self.current_day}...")
         # print(f"Number of sell orders in lob before processing: {len(self.get_sell_orders())}")
         # print(f"Number of buy orders in lob before processing: {len(self.get_buy_orders())}")
         # print(f"Market price: {self.get_market_price()}")
@@ -98,14 +101,15 @@ class LimitOrderMarket(mesa.Model):
 
         # Fundamentalwert aktualisieren
         if poisson(self.event_info_frequency):
-            self.information_events[self.current_day] = True
+            self.info_event_occurred = True
             old_price = self.current_v
             shock = lognormal(1, self.event_info_intensity)
             # print(f"Shock applied: {shock}")
             shock_with_direction =  round(shock if random.random() < 0.5 else -1 * shock)
             self.current_v = max(1, self.current_v + shock_with_direction)  # ensure price is positive
-            print(f"Shock applied: trading_day={self.current_day}, old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.2%}")
-
+            # print(f"Shock applied: trading_day={self.current_day}, old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.2%}")
+        else:
+            self.info_event_occurred = False
 
         # Liquiditätsereignisse
         for agent in self.agents:
@@ -117,7 +121,7 @@ class LimitOrderMarket(mesa.Model):
 
         self.agents.shuffle_do("step")
 
-        self.data_collector.collect(self)
+        self.datacollector.collect(self)
 
         self.current_day += 1
         # print(f"Step {self.current_day} completed.")
@@ -146,11 +150,6 @@ class LimitOrderMarket(mesa.Model):
         else:
             return 0.0
 
-    def evaluate_efficiency(self):
-        prices = self.data_collector.get_model_vars_dataframe()["market_price"].values
-        true_vals = self.data_collector.get_model_vars_dataframe()["true_value"].values
-        avg_deviation = np.mean(np.abs(prices - true_vals))
-        print(f"Durchschnittliche Abweichung Marktpreis vs. fundamentaler Wert: {avg_deviation:.2f}")
 
     def set_orders_expired(self):
         for order in self.lob:

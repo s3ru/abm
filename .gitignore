@@ -172,3 +172,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# Ignore all files in the img folder
+img/*
+
+# Ignore all files in the data folder
+data/*
