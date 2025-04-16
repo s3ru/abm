@@ -36,6 +36,7 @@ class LimitOrderMarket(mesa.Model):
             event_info_intensity = 0.5,
             event_liquidity_frequency = 0.05,
             event_liquidity_intensity = 1000,
+            starting_phase = 5,
     
             
         ) -> None:
@@ -58,6 +59,8 @@ class LimitOrderMarket(mesa.Model):
         self.n_days: int = n_days
         self.current_v: float = start_true_value
         self.initial_market_price: float = round(normal(self.current_v, 5))
+        print(f"Initial market price: {self.initial_market_price}")
+
         self.lob: List[LimitOrder] = [] # List of LimitOrder objects
         self.transactions: List[Transaction] = [] # List of transactions (price, volume)
         self.volumes: Dict[int, float] = {}  # List of volumes
@@ -65,7 +68,7 @@ class LimitOrderMarket(mesa.Model):
         self.last_market_price: float = self.initial_market_price
         self.data_collector = DataCollector(
             model_reporters={
-                             "trading_day": lambda m: m.current_day,
+                             "trading_day": lambda m: m.current_day - starting_phase,
                              "market_price": lambda m: m.get_market_price(),
                              "true_value": lambda m: m.current_v,
                              "bid_ask_spread": lambda m: m.get_bid_ask_spread(),
@@ -282,6 +285,7 @@ class LimitOrderMarket(mesa.Model):
         else:
             # nobody wants to buy decreasing price
             if self.get_lob_tilt() < -0.5:
+                # print(f"Nobody wants to buy, decreasing price")
                 return self.last_market_price * (1 - 0.01) 
             else:
                 return self.last_market_price
@@ -303,6 +307,7 @@ class LimitOrderMarket(mesa.Model):
         else:
             # nobody wants to sell increasing price
             if self.get_lob_tilt() > 0.5:
+                # print(f"Nobody wants to sell, increasing price")
                 return self.last_market_price * (1 + 0.01)
             else:
                 return self.last_market_price
@@ -320,8 +325,8 @@ class LimitOrderMarket(mesa.Model):
 
     def markov_price_step(self):
         mu = 100
-        phi = 0.95
-        sigma = 1.0
+        phi = 0.8
+        sigma = 1
         old_price = self.current_v
         self.current_v = max(1, round(mu + phi * (self.current_v - mu) + np.random.normal(0, sigma), 2))
         # print(f"Markov price step: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.4%}")

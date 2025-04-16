@@ -3,8 +3,10 @@
 from limit_order_market import LimitOrderMarket
 
 
+starting_phase = 10
+
 model = LimitOrderMarket(
-    num_agents=1000,
+    num_agents=500,
     n_days=50,
     start_true_value=100,
     decision_threshold=0.05, 
@@ -15,6 +17,7 @@ model = LimitOrderMarket(
     event_info_intensity = 1,
     event_liquidity_frequency = 0.05,
     event_liquidity_intensity = 10,
+    starting_phase=starting_phase,
 )
 model.run_model()
 
@@ -23,9 +26,13 @@ model.run_model()
 
 # plot market_price on searborn line chart
 model_dfs = model.data_collector.get_model_vars_dataframe()
+model_dfs = model_dfs.iloc[starting_phase:] # remove first 5 days to avoid noise
+model_dfs = model_dfs.reset_index(drop=True)
 
 # append information events to the dataframe
-model_dfs['information_events'] = model.information_events
+df_info = model.information_events[starting_phase:]
+df_info = df_info[1:] + [False] # shift for visualization
+model_dfs['information_events'] = df_info
 
 # print head
 print(model_dfs.head())
@@ -68,7 +75,7 @@ axs[0].legend(h, l, title="Legend", loc="upper left")
 
 
 # Histogram for volume
-sns.histplot(data=filtered_df, x='trading_day', weights='volume', bins=10, ax=axs[1], kde=False, color='grey', alpha=0.5)
+sns.histplot(data=filtered_df, x='trading_day', weights='volume', bins=round(model.n_days/2), ax=axs[1], kde=False, color='grey', alpha=0.5)
 axs[1].set_title('Volume Over Time')
 axs[1].set_ylabel('Volume')
 axs[1].set_xlabel('Trading Day')
