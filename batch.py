@@ -38,12 +38,23 @@ results_df = pd.DataFrame(results)
 # Iterate over each unique combination of RunId and iteration
 for (run_id, iteration), group_data in results_df.groupby(["RunId", "iteration"]):
 
-    sel_columns = ['Step', 'num_agents', 'n_days', 'trading_day', 'market_price', 'info_event', 'true_value', 'bid_ask_spread', 'volume']
+    sel_columns = ['Step', 'num_agents', 'n_days', 'trading_day', 'market_price', 'info_event',
+                'true_value', 'bid_ask_spread', 'volume', 'shares_outstanding', 'share_of_marginal_traders',
+                'rel_distance_sell_orders', 'rel_distance_buy_orders']
     # print(f"Generating visualization for RunId: {run_id}, Iteration: {iteration}")
 
     rows_for_eval = group_data[sel_columns].drop_duplicates()
     rows_for_eval = rows_for_eval.iloc[10:].reset_index(drop=True)
+
+    avg_rel_distance_buy_orders = rows_for_eval['rel_distance_buy_orders'].mean()
+    avg_rel_distance_sell_orders = rows_for_eval['rel_distance_sell_orders'].mean()
+    print(f"Avg Rel Distance Buy Orders: {avg_rel_distance_buy_orders:.2f}, Avg Rel Distance Sell Orders: {avg_rel_distance_sell_orders:.2f}")
     
+    # median distance buy orders
+    median_rel_distance_buy_orders = rows_for_eval['rel_distance_buy_orders'].median()
+    median_rel_distance_sell_orders = rows_for_eval['rel_distance_sell_orders'].median()
+    print(f"Median Rel Distance Buy Orders: {median_rel_distance_buy_orders:.2f}, Median Rel Distance Sell Orders: {median_rel_distance_sell_orders:.2f}")
+
     # Create the visualization for the current group
     create_viz(rows_for_eval)
 

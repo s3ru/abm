@@ -51,6 +51,14 @@ class LimitOrder:
         else:
             return self.quantity + sum_of_transactions
         
+    
+
+        
+    def get_avg_execution_price(self):
+        if len(self.transactions) == 0:
+            return 0
+        return sum([transaction.price * transaction.volume for transaction in self.transactions]) / sum([transaction.volume for transaction in self.transactions])
+        
     def get_status(self):
         if self.is_canceled:
             return OrderStatus.CANCELED
@@ -60,6 +68,8 @@ class LimitOrder:
             return OrderStatus.PARTIALLY_FILLED
         else:
             return OrderStatus.OPEN
+        
+    
 
 class Transaction:
     def __init__(self, price: float, volume: float, buyer_order: LimitOrder, seller_order: LimitOrder, trading_day: int):

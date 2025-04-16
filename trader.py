@@ -56,6 +56,18 @@ class Trader(mesa.Agent):
         
         return self.cash + self.num_of_shares * self.model.get_market_price() 
     
+    def get_trader_type(self):
+        if (self.skill >= 0.75 
+            and self.risk_aversion <= 0.6
+            and self.risk_appetit >= 0.4
+            and self.overconfidence <= 0.5):
+            return "marginal_trader"
+        else:
+            return "default_trader"
+        
+    def is_marginal_trader(self):
+        return self.get_trader_type() == "marginal_trader"
+    
     def get_decision_threshold(self):
         # overconfidence lowers decision treshold
         return self.model.decision_threshold - max(0, self.overconfidence - 0.5)
@@ -67,17 +79,45 @@ class Trader(mesa.Agent):
         # print(f"Trader {self.unique_id} completed step.")
 
     def estimate_true_value(self):
-        # Example logic for estimating the true value
-        noise_abs = self.model.get_market_price() * self.model.noise_range
-        uninformed_estimation = round(max(0.01, self.estimated_true_value + getRandomUniform(-noise_abs, noise_abs)), 2)
         
-        tilt = self.model.get_lob_tilt() 
-        if tilt != 0:
-            tilt_abs = tilt / 10 * self.model.get_market_price()     
-            self.estimated_true_value = round(uninformed_estimation + tilt_abs * getRandomUniform(0.5, 1), 2)
+        new_estimation = self.estimated_true_value
+        noise_abs = self.model.get_market_price() * self.model.noise_range
+        if(self.skill <= 0.75):
+            # basic noise for not highly skilled traders
+            new_estimation = round(max(0.01, self.estimated_true_value + getRandomUniform(-noise_abs, noise_abs)), 2)
+        
+        if(self.skill > 0.4):
+            # more skilled traders take the market price into account by following order book
+            skew = self.model.get_lob_skew() 
+            if skew != 0:
+                # if more people are on the buy side, the skew is positive
+                # if more people are on the sell side, the skew is negative
+                # agent follows the skew of the order book -> trend following
+                skew_abs = skew / 10 * self.model.get_market_price()     
+                new_estimation = round(new_estimation + skew_abs * getRandomUniform(0.5, 1), 2)
+                # new_estimation = round(new_estimation + skew_abs, 2)
+        
+        if(self.skill > 0.6):
+            sellers_rel_distance = self.model.get_rel_distance_sell_orders()
+            if (sellers_rel_distance != 0):
+                if (sellers_rel_distance > 0.4): # based on model avg
+                    # median is rel far away from ask price -> no selling pressure -> pos. signal
+                    new_estimation = round(new_estimation + getRandomUniform(0.5, noise_abs), 2)
+                else:
+                    # median is rel close to ask price -> selling pressure -> neg. signal
+                    new_estimation = round(new_estimation - getRandomUniform(0.5, noise_abs), 2)
 
-        else:
-            self.estimated_true_value = round(uninformed_estimation, 2)
+            buyers_rel_distance = self.model.get_rel_distance_buy_orders()
+            if (buyers_rel_distance != 0):
+                if(buyers_rel_distance > 0.25): # based on model avg 
+                    # median is rel far away from bid price -> no buying pressure -> neg. signal
+                    new_estimation = round(new_estimation - getRandomUniform(0.5, noise_abs), 2)
+                else:
+                    # median is rel close to bid price -> buying pressure -> pos. signal
+                    new_estimation = round(new_estimation + getRandomUniform(0.5, noise_abs), 2)
+            
+
+        self.estimated_true_value = round(new_estimation, 2)
 
         # print(f"Trader {self.unique_id} estimated true value: {self.estimated_true_value}")
 
@@ -103,6 +143,7 @@ class Trader(mesa.Agent):
 
         decision = 0
 
+        # decide to trade if portfolio allocation is not in line with risk appetite
         portfolio_share_stocks = self.get_portfolio_share_stocks()
         diff_portfolio_alloc = self.risk_appetit - portfolio_share_stocks
         rel_diff_portfolio_alloc = diff_portfolio_alloc / self.risk_appetit
@@ -113,12 +154,13 @@ class Trader(mesa.Agent):
             decision += rel_diff_portfolio_alloc
             
 
+        # decide to trade if own price estimation is significantly different from market price
         rel_deviation_price_estimation = (self.estimated_true_value - self.model.get_market_price()) / self.model.get_market_price()
         # print(f"Trader {self.unique_id} relative deviation price estimation: {rel_deviation_price_estimation:.2%}")
         if abs(rel_deviation_price_estimation) > self.get_decision_threshold():
             decision += rel_deviation_price_estimation
             
-        # Example decision logic
+    
         if abs(decision) > self.get_decision_threshold():
             direction = "buy" if decision > 0 else "sell"
             order_size = self.get_order_size(direction)

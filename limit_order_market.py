@@ -1,14 +1,3 @@
-# ABM einer Limit-Order-Markt-Simulation mit MESA
-# Basierend auf der Beschreibung und orientiert an Goettler et al. (2009)
-# Has multi-dimensional arrays and matrices.
-# Has a large collection of mathematical functions to operate on these arrays.
-import numpy as np
-
-# Data manipulation and analysis.
-import pandas as pd
-
-# Data visualization tools.
-import seaborn as sns
 
 import mesa
 from typing import Dict, List
@@ -21,8 +10,6 @@ import random
 from limit_order import LimitOrder, OrderStatus, Transaction
 from trader import Trader
 import copy
-
-from viz import create_viz
 
 class LimitOrderMarket(mesa.Model):
     def __init__(
@@ -75,7 +62,13 @@ class LimitOrderMarket(mesa.Model):
                              "info_event":  lambda m: m.info_event_occurred,
                              "true_value": lambda m: m.current_v,
                              "bid_ask_spread": lambda m: m.get_bid_ask_spread(),
-                             "volume": lambda m: m.get_volume_current_trading_day()},
+                             "volume": lambda m: m.get_volume_current_trading_day(),
+                             "shares_outstanding": lambda m: m.get_total_shares_outstanding(),
+                             "lob_skew": lambda m: m.get_lob_skew(),
+                             "share_of_marginal_traders": lambda m: m.get_share_of_marginal_traders(),
+                             "rel_distance_sell_orders": lambda m: m.get_rel_distance_sell_orders(),
+                             "rel_distance_buy_orders": lambda m: m.get_rel_distance_buy_orders(),
+                             },
             agent_reporters={"PnL": "pnl", "wealth": lambda t: t.get_total_wealth(), "cash": "cash", "num_of_shares": "num_of_shares",}
         )
 
@@ -126,6 +119,16 @@ class LimitOrderMarket(mesa.Model):
         self.current_day += 1
         # print(f"Step {self.current_day} completed.")
 
+    def get_total_shares_outstanding(self):
+        """
+        Returns the total number of shares outstanding in the market.
+        """
+        total_shares = sum(agent.num_of_shares for agent in self.agents)
+        return total_shares
+
+    def get_share_of_marginal_traders(self) -> float:
+        return round(sum(1 if agent.is_marginal_trader() else 0 for agent in self.agents) / (self.num_agents), 2)
+
     def get_market_price(self) -> float:
         if len(self.transactions) > 0:
             last_transaction = self.transactions[-1]
@@ -135,7 +138,7 @@ class LimitOrderMarket(mesa.Model):
         
         return self.last_market_price
         
-    def get_lob_tilt(self) -> float: 
+    def get_lob_skew(self) -> float: 
         """
         Returns the relative depth of the limit order book (LOB).
         """
@@ -150,6 +153,31 @@ class LimitOrderMarket(mesa.Model):
         else:
             return 0.0
 
+    def get_rel_distance_sell_orders(self):
+        """
+        Returns the relative distance of the limit order book (LOB) from the market price.
+        """
+        sell_orders = self.get_sell_orders()
+        if len(sell_orders) > 0:
+            median_sell_order_price = np.median([order.limit_price for order in sell_orders])
+            ask = self.get_ask_quote_lob()
+            rel_distance = abs(ask - median_sell_order_price) / ask
+            return rel_distance
+        else:
+            return 0.0
+        
+    def get_rel_distance_buy_orders(self):
+        """
+        Returns the relative distance of the limit order book (LOB) from the market price.
+        """
+        buy_orders = self.get_buy_orders()
+        if len(buy_orders) > 0:
+            median_buy_order_price = np.median([order.limit_price for order in buy_orders])
+            bid = self.get_bid_quote_lob()
+            rel_distance = abs(bid - median_buy_order_price) / bid
+            return rel_distance
+        else:
+            return 0.0
 
     def set_orders_expired(self):
         for order in self.lob:
@@ -283,7 +311,7 @@ class LimitOrderMarket(mesa.Model):
             return best_bid.limit_price
         else:
             # nobody wants to buy decreasing price
-            if self.get_lob_tilt() < -0.5:
+            if self.get_lob_skew() < -0.5:
                 # print(f"Nobody wants to buy, decreasing price")
                 return self.last_market_price * (1 - 0.01) 
             else:
@@ -305,7 +333,7 @@ class LimitOrderMarket(mesa.Model):
             return best_ask.limit_price
         else:
             # nobody wants to sell increasing price
-            if self.get_lob_tilt() > 0.5:
+            if self.get_lob_skew() > 0.5:
                 # print(f"Nobody wants to sell, increasing price")
                 return self.last_market_price * (1 + 0.01)
             else:

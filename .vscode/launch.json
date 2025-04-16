@@ -4,7 +4,7 @@
             "type": "debugpy",
             "request": "launch",
             "name": "Launch MESA App",
-            "program": "${workspaceFolder}/main.py",
+            "program": "${workspaceFolder}/batch.py",
             "console": "integratedTerminal",
             "envFile": "${workspaceFolder}/.env"
         }
