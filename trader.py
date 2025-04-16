@@ -38,16 +38,16 @@ class Trader(mesa.Agent):
 
         # self.placed_orders = List[LimitOrder] = []  # List of orders placed by the trader
         
-        print(f"""Trader #{self.unique_id!s}
-              ================================= 
-              Cash: {self.cash}, 
-              Num of shares: {self.num_of_shares},
-              Risk aversion: {self.risk_aversion}, risk appetite: {self.risk_appetit}, 
-              Valuation Bias: {self.valuation_bias}, 
-              Overconfidence: {self.overconfidence},
-              Skill: {self.skill}, 
-              =================================
-             """)
+        # print(f"""Trader #{self.unique_id!s}
+        #       ================================= 
+        #       Cash: {self.cash}, 
+        #       Num of shares: {self.num_of_shares},
+        #       Risk aversion: {self.risk_aversion}, risk appetite: {self.risk_appetit}, 
+        #       Valuation Bias: {self.valuation_bias}, 
+        #       Overconfidence: {self.overconfidence},
+        #       Skill: {self.skill}, 
+        #       =================================
+        #      """)
         
     def get_total_wealth(self):
         """

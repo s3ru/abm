@@ -27,14 +27,28 @@ class LimitOrderMarket(mesa.Model):
             self,
             num_agents: int = 100,
             n_days: int = 100,
+            start_true_value = 100.0,
             decision_threshold = 0.05,
             order_expiration = 10,
             noise_range = 0.03,
-            wealth_min=5000) -> None:
+            wealth_min=5000,
+            event_info_frequency = 0.2,
+            event_info_intensity = 0.5,
+            event_liquidity_frequency = 0.05,
+            event_liquidity_intensity = 1000,
+    
+            
+        ) -> None:
         super().__init__(seed=None)
         # wealth
         self.wealth_alpha = 2.0       # shape
         self.wealth_min = wealth_min       # minimum wealth
+
+        # init event parameters
+        self.event_info_frequency = event_info_frequency
+        self.event_info_intensity = event_info_intensity
+        self.event_liquidity_frequency = event_liquidity_frequency
+        self.event_liquidity_intensity = event_liquidity_intensity
 
         self.noise_range: float = noise_range 
         self.num_agents: int = num_agents
@@ -42,27 +56,29 @@ class LimitOrderMarket(mesa.Model):
         self.decision_threshold: float = decision_threshold
         self.order_expiration: int = order_expiration
         self.n_days: int = n_days
-        self.current_v: float = 100.0
-        self.initial_market_price: float = round(normal(self.current_v, 10))
+        self.current_v: float = start_true_value
+        self.initial_market_price: float = round(normal(self.current_v, 5))
         self.lob: List[LimitOrder] = [] # List of LimitOrder objects
         self.transactions: List[Transaction] = [] # List of transactions (price, volume)
         self.volumes: Dict[int, float] = {}  # List of volumes
-        self.information_events: List[bool] = []  # List of information events
+        self.information_events: List[bool] = [False] * n_days  # List of information events
         self.last_market_price: float = self.initial_market_price
         self.data_collector = DataCollector(
-            model_reporters={"market_price": lambda m: m.get_market_price(),
+            model_reporters={
+                             "trading_day": lambda m: m.current_day,
+                             "market_price": lambda m: m.get_market_price(),
                              "true_value": lambda m: m.current_v,
                              "bid_ask_spread": lambda m: m.get_bid_ask_spread(),
                              "volume": lambda m: m.get_volume_current_trading_day()},
             agent_reporters={"PnL": "pnl", "wealth": lambda t: t.get_total_wealth(), "cash": "cash", "num_of_shares": "num_of_shares",}
         )
 
-        print(f"""LOM 
-              ================================
-              initial market price: {self.initial_market_price},
-              current_v: {self.current_v}, 
-              number of agents: {self.num_agents}, 
-              number of days: {self.n_days}""")
+        # print(f"""LOM 
+        #       ================================
+        #       initial market price: {self.initial_market_price},
+        #       current_v: {self.current_v}, 
+        #       number of agents: {self.num_agents}, 
+        #       number of days: {self.n_days}""")
       
 
         Trader.create_agents(model=self, n=num_agents)
@@ -70,30 +86,31 @@ class LimitOrderMarket(mesa.Model):
 
     def step(self) -> None:
         print(f"Starting step {self.current_day}...")
-        print(f"Number of sell orders in lob before processing: {len(self.get_sell_orders())}")
-        print(f"Number of buy orders in lob before processing: {len(self.get_buy_orders())}")
-        print(f"Market price: {self.get_market_price()}")
+        # print(f"Number of sell orders in lob before processing: {len(self.get_sell_orders())}")
+        # print(f"Number of buy orders in lob before processing: {len(self.get_buy_orders())}")
+        # print(f"Market price: {self.get_market_price()}")
 
         self.set_orders_expired()
         self.markov_price_step()
 
         # Fundamentalwert aktualisieren
-        if poisson(0.2):
-            self.information_events.append(True)
-            # old_price = self.current_v
-            shock = lognormal(0, 0.2)
+        if poisson(self.event_info_frequency):
+            self.information_events[self.current_day] = True
+            old_price = self.current_v
+            shock = lognormal(1, self.event_info_intensity)
             # print(f"Shock applied: {shock}")
-            self.current_v += round(shock if random.random() < 0.5 else -1 * shock)
-            # print(f"Shock applied: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.2%}")
-        else:
-            self.information_events.append(False)
+            shock_with_direction =  round(shock if random.random() < 0.5 else -1 * shock)
+            self.current_v = max(1, self.current_v + shock_with_direction)  # ensure price is positive
+            print(f"Shock applied: trading_day={self.current_day}, old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.2%}")
+
 
         # Liquiditätsereignisse
         for agent in self.agents:
-            if poisson(0.05):
-                cash_change = round(normal(100, 10))
+            if poisson(self.event_liquidity_frequency):
+                old_cash = agent.cash
+                cash_change = round(normal(0.05 * agent.init_wealth, self.event_liquidity_intensity))
                 agent.cash += cash_change * random.choice([-1, 1])
-                # print(f"Agent {agent.unique_id} cash updated by {cash_change}. New cash: {agent.cash}")
+                # print(f"Agent {agent.unique_id} cash updated by {cash_change}. New cash: {agent.cash}, diff= {(agent.cash - old_cash)/old_cash:.2%}")
 
         self.agents.shuffle_do("step")
 
@@ -161,7 +178,7 @@ class LimitOrderMarket(mesa.Model):
                             trading_day=self.current_day
                         )
                         self.transactions.append(transaction)
-                        print(f"Transaction executed: {transaction}")
+                        # print(f"Transaction executed: {transaction}")
                         sell_order.transactions.append(transaction)
                         buy_order.transactions.append(transaction)
 
@@ -199,7 +216,7 @@ class LimitOrderMarket(mesa.Model):
                             trading_day=self.current_day
                         )
                         self.transactions.append(transaction)
-                        print(f"Transaction executed: {transaction}")
+                        # print(f"Transaction executed: {transaction}")
                         buy_order.transactions.append(transaction)
                         sell_order.transactions.append(transaction)
 
@@ -306,7 +323,7 @@ class LimitOrderMarket(mesa.Model):
         phi = 0.95
         sigma = 1.0
         old_price = self.current_v
-        self.current_v = round(mu + phi * (self.current_v - mu) + np.random.normal(0, sigma), 2)
+        self.current_v = max(1, round(mu + phi * (self.current_v - mu) + np.random.normal(0, sigma), 2))
         # print(f"Markov price step: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.4%}")
 
     def run_model(self):
