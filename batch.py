@@ -6,8 +6,8 @@ from viz import create_viz
 
 
 params = {
-    "num_agents": 200, # range(250, 1001, 250),
-    "n_days": 50, # 200,
+    "num_agents": 250, #  range(250, 1001, 250),
+    "n_days": 100 # 50, # 200,
     # "start_true_value": 100,
     # "decision_threshold": 0.05,
     # "order_expiration": 10,

@@ -39,7 +39,8 @@ def create_viz(df):
 
 
     agents = df.iloc[0]["num_agents"]
-    efficiency = evaluate_market_efficiency(df)
+    eff = evaluate_market_efficiency(df)
+    corr = get_price_correlation(df)
 
     selected_columns = ['trading_day', 'market_price', 'true_value', 'volume']
     filtered_df = model_dfs[selected_columns]
@@ -51,7 +52,7 @@ def create_viz(df):
     # Line chart for market_price
     sns.lineplot(data=filtered_df, x='trading_day', y='market_price', label='Market Price', ax=axs[0], color='steelblue', alpha=0.7)
     sns.lineplot(data=filtered_df, x='trading_day', y='true_value', label='True Value', ax=axs[0], color='seagreen', alpha=0.7)
-    axs[0].set_title(f"Market Price and True Value Over Time, Agents: {agents}, Efficiency: {efficiency:.2%}")
+    axs[0].set_title(f"Market Price and True Value Over Time, Agents: {agents},  Corr: {corr:.2f}, Efficiency: {eff:.2%}")
     axs[0].set_ylabel('Price')
 
 
@@ -84,9 +85,25 @@ def create_viz(df):
     plt.show()
 
 
+def get_price_correlation(df):
+    prices = df["market_price"].values
+    true_vals = df["true_value"].values
+
+    # calculate pearson correlation 
+    correlation = np.corrcoef(prices, true_vals)[0, 1]
+    # print(f"Pearson-Korrelation Marktpreis vs. fundamentaler Wert: {correlation:.2f}")
+
+    # avg_deviation = np.mean(np.abs(prices - true_vals))
+    # avg_true_value = np.mean(true_vals)
+    # rel_efficiency = 1 - (avg_deviation / avg_true_value)
+    # print(f"Durchschnittliche Abweichung Marktpreis vs. fundamentaler Wert: {rel_efficiency:.2f}")
+    return correlation
+
 def evaluate_market_efficiency(df):
     prices = df["market_price"].values
     true_vals = df["true_value"].values
+
+    
     avg_deviation = np.mean(np.abs(prices - true_vals))
     avg_true_value = np.mean(true_vals)
     rel_efficiency = 1 - (avg_deviation / avg_true_value)
