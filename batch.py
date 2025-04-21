@@ -4,16 +4,18 @@ import pandas as pd
 
 from viz import create_viz
 
-
+starting_phase = 10
 params = {
-    "num_agents": 250, #  range(250, 1001, 250),
-    "n_days": 100 # 50, # 200,
+    "num_agents": 500, # range(250, 1001, 250),
+    "n_days": 200, # 50, # 200,
+    "share_of_marginal_traders": range(0.05, 0.50001, 0.05),
+    "cost_of_information": range(500, 5000, 500),
     # "start_true_value": 100,
     # "decision_threshold": 0.05,
     # "order_expiration": 10,
     # "noise_range": 0.05,
     # "wealth_min": 5000,
-    # "event_info_frequency": 0.2,
+    "event_info_frequency": 0.1,
     # "event_info_intensity": 1,
     # "event_liquidity_frequency": 0.05,
     # "event_liquidity_intensity": 10,
@@ -35,25 +37,54 @@ results_df = pd.DataFrame(results)
 # print(f"The columns of the data frame are {list(results_df.keys())}.")
 # print(results_df.head())
 
+# sensitivity_df = pd.DataFrame(
+#     sensitivity_matrix,
+#     index=[f"Var1={v:.2f}" for v in var1_values],
+#     columns=[f"Var2={v:.0f}" for v in var2_values]
+# )
+
+
 # Iterate over each unique combination of RunId and iteration
 for (run_id, iteration), group_data in results_df.groupby(["RunId", "iteration"]):
 
     sel_columns = ['Step', 'num_agents', 'n_days', 'trading_day', 'market_price', 'info_event',
                 'true_value', 'bid_ask_spread', 'volume', 'shares_outstanding', 'share_of_marginal_traders',
-                'rel_distance_sell_orders', 'rel_distance_buy_orders']
+                'rel_distance_sell_orders', 'rel_distance_buy_orders', 'cost_of_information', 'is_marginal_trader', 'PnL', 'num_bought_information', 'mum_budget_contstraint']
     # print(f"Generating visualization for RunId: {run_id}, Iteration: {iteration}")
 
     rows_for_eval = group_data[sel_columns].drop_duplicates()
-    rows_for_eval = rows_for_eval.iloc[10:].reset_index(drop=True)
+    rows_for_eval = rows_for_eval.iloc[starting_phase:].reset_index(drop=True)
 
     avg_rel_distance_buy_orders = rows_for_eval['rel_distance_buy_orders'].mean()
     avg_rel_distance_sell_orders = rows_for_eval['rel_distance_sell_orders'].mean()
-    print(f"Avg Rel Distance Buy Orders: {avg_rel_distance_buy_orders:.2f}, Avg Rel Distance Sell Orders: {avg_rel_distance_sell_orders:.2f}")
+    # print(f"Avg Rel Distance Buy Orders: {avg_rel_distance_buy_orders:.2f}, Avg Rel Distance Sell Orders: {avg_rel_distance_sell_orders:.2f}")
     
     # median distance buy orders
     median_rel_distance_buy_orders = rows_for_eval['rel_distance_buy_orders'].median()
     median_rel_distance_sell_orders = rows_for_eval['rel_distance_sell_orders'].median()
-    print(f"Median Rel Distance Buy Orders: {median_rel_distance_buy_orders:.2f}, Median Rel Distance Sell Orders: {median_rel_distance_sell_orders:.2f}")
+    # print(f"Median Rel Distance Buy Orders: {median_rel_distance_buy_orders:.2f}, Median Rel Distance Sell Orders: {median_rel_distance_sell_orders:.2f}")
+
+
+    num_info_events = rows_for_eval['info_event'].sum()
+    print(f"Number of Information Events: {num_info_events}")
+    volatility_mp = rows_for_eval['market_price'].std()
+    print(f"Volatility of Market Prices: {volatility_mp:.2f}")
+    volatility_tv = rows_for_eval['true_value'].std()
+    print(f"Volatility of True Value: {volatility_tv:.2f}")
+
+
+    # Filter for the last trading day
+    last_trading_day = rows_for_eval['trading_day'].max()
+    last_day_data = rows_for_eval[rows_for_eval['trading_day'] == last_trading_day]
+
+    # Calculate average PnL for marginal and non-marginal traders
+    avg_pnl_marginal = last_day_data[last_day_data['is_marginal_trader'] == True]['PnL'].mean()
+    avg_pnl_non_marginal = last_day_data[last_day_data['is_marginal_trader'] == False]['PnL'].mean()
+
+    print(f"RunId: {run_id}, Iteration: {iteration}")
+    print(f"Average PnL of Marginal Traders on Last Trading Day: {avg_pnl_marginal:.2f}")
+    print(f"Average PnL of Non-Marginal Traders on Last Trading Day: {avg_pnl_non_marginal:.2f}")
+
 
     # Create the visualization for the current group
     create_viz(rows_for_eval)

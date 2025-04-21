@@ -15,7 +15,9 @@ class LimitOrderMarket(mesa.Model):
     def __init__(
             self,
             num_agents: int = 100,
+            share_of_marginal_traders: float = 0.5,
             n_days: int = 100,
+            cost_of_information: int = 500,
             start_true_value = 100.0,
             decision_threshold = 0.05,
             order_expiration = 10,
@@ -32,6 +34,9 @@ class LimitOrderMarket(mesa.Model):
         self.wealth_alpha = 2.0       # shape
         self.wealth_min = wealth_min       # minimum wealth
 
+        self.cost_of_information = cost_of_information
+        self.share_of_marginal_traders = share_of_marginal_traders
+
         # init event parameters
         self.event_info_frequency = event_info_frequency
         self.event_info_intensity = event_info_intensity
@@ -45,8 +50,8 @@ class LimitOrderMarket(mesa.Model):
         self.order_expiration: int = order_expiration
         self.n_days: int = n_days
         # self.starting_phase: int = starting_phase
-        self.current_v: float = start_true_value
-        self.initial_market_price: float = round(normal(self.current_v, 5))
+        self.true_value: float = start_true_value
+        self.initial_market_price: float = round(normal(self.true_value, 5))
         # print(f"Initial market price: {self.initial_market_price}")
 
         self.lob: List[LimitOrder] = [] # List of LimitOrder objects
@@ -60,22 +65,32 @@ class LimitOrderMarket(mesa.Model):
                              "trading_day": lambda m: m.current_day,
                              "market_price": lambda m: m.get_market_price(),
                              "info_event":  lambda m: m.info_event_occurred,
-                             "true_value": lambda m: m.current_v,
+                             "true_value": lambda m: m.true_value,
                              "bid_ask_spread": lambda m: m.get_bid_ask_spread(),
                              "volume": lambda m: m.get_volume_current_trading_day(),
                              "shares_outstanding": lambda m: m.get_total_shares_outstanding(),
                              "lob_skew": lambda m: m.get_lob_skew(),
-                             "share_of_marginal_traders": lambda m: m.get_share_of_marginal_traders(),
+                             "cost_of_information": "cost_of_information",
+                             "share_of_marginal_traders": "share_of_marginal_traders",
                              "rel_distance_sell_orders": lambda m: m.get_rel_distance_sell_orders(),
                              "rel_distance_buy_orders": lambda m: m.get_rel_distance_buy_orders(),
                              },
-            agent_reporters={"PnL": "pnl", "wealth": lambda t: t.get_total_wealth(), "cash": "cash", "num_of_shares": "num_of_shares",}
+            agent_reporters={
+                "PnL": lambda t: t.calculate_pnl(),
+                "wealth": lambda t: t.get_total_wealth(),
+                "is_marginal_trader": "is_marginal_trader",
+                "cash": "cash",
+                "num_of_shares": "num_of_shares",
+                "informed": "informed",
+                "num_bought_information": "num_bought_information",
+                "mum_budget_contstraint": "mum_budget_contstraint",
+                }
         )
 
         # print(f"""LOM 
         #       ================================
         #       initial market price: {self.initial_market_price},
-        #       current_v: {self.current_v}, 
+        #       true_value: {self.true_value}, 
         #       number of agents: {self.num_agents}, 
         #       number of days: {self.n_days}""")
       
@@ -95,12 +110,12 @@ class LimitOrderMarket(mesa.Model):
         # Fundamentalwert aktualisieren
         if poisson(self.event_info_frequency):
             self.info_event_occurred = True
-            old_price = self.current_v
+            old_price = self.true_value
             shock = lognormal(1, self.event_info_intensity)
             # print(f"Shock applied: {shock}")
             shock_with_direction =  round(shock if random.random() < 0.5 else -1 * shock)
-            self.current_v = max(1, self.current_v + shock_with_direction)  # ensure price is positive
-            # print(f"Shock applied: trading_day={self.current_day}, old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.2%}")
+            self.true_value = max(1, self.true_value + shock_with_direction)  # ensure price is positive
+            # print(f"Shock applied: trading_day={self.current_day}, old_price={old_price}, new_price={self.true_value}, diff={(self.true_value - old_price)/old_price:.2%}")
         else:
             self.info_event_occurred = False
 
@@ -110,6 +125,7 @@ class LimitOrderMarket(mesa.Model):
                 old_cash = agent.cash
                 cash_change = round(normal(0.05 * agent.init_wealth, self.event_liquidity_intensity))
                 agent.cash += cash_change * random.choice([-1, 1])
+                agent.cash_chg_liquidity_events += cash_change
                 # print(f"Agent {agent.unique_id} cash updated by {cash_change}. New cash: {agent.cash}, diff= {(agent.cash - old_cash)/old_cash:.2%}")
 
         self.agents.shuffle_do("step")
@@ -125,9 +141,6 @@ class LimitOrderMarket(mesa.Model):
         """
         total_shares = sum(agent.num_of_shares for agent in self.agents)
         return total_shares
-
-    def get_share_of_marginal_traders(self) -> float:
-        return round(sum(1 if agent.is_marginal_trader() else 0 for agent in self.agents) / (self.num_agents), 2)
 
     def get_market_price(self) -> float:
         if len(self.transactions) > 0:
@@ -354,9 +367,9 @@ class LimitOrderMarket(mesa.Model):
         mu = 100
         phi = 0.8
         sigma = 1
-        old_price = self.current_v
-        self.current_v = max(1, round(mu + phi * (self.current_v - mu) + np.random.normal(0, sigma), 2))
-        # print(f"Markov price step: old_price={old_price}, new_price={self.current_v}, diff={(self.current_v - old_price)/old_price:.4%}")
+        old_price = self.true_value
+        self.true_value = max(1, round(mu + phi * (self.true_value - mu) + np.random.normal(0, sigma), 2))
+        # print(f"Markov price step: old_price={old_price}, new_price={self.true_value}, diff={(self.true_value - old_price)/old_price:.4%}")
 
     def run_model(self):
         for _ in range(self.n_days):

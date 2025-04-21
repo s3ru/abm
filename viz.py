@@ -1,6 +1,7 @@
 
 import os
 from datetime import datetime
+from sklearn.metrics import mean_squared_error
 import seaborn as sns
 print(sns.__version__)
 import matplotlib.pyplot as plt
@@ -39,7 +40,10 @@ def create_viz(df):
 
 
     agents = df.iloc[0]["num_agents"]
-    eff = evaluate_market_efficiency(df)
+    share_mt = df.iloc[0]["share_of_marginal_traders"]
+    ic = df.iloc[0]["cost_of_information"]
+    # eff = evaluate_market_efficiency(df)
+    mse = calc_mse(df)
     corr = get_price_correlation(df)
 
     selected_columns = ['trading_day', 'market_price', 'true_value', 'volume']
@@ -52,7 +56,7 @@ def create_viz(df):
     # Line chart for market_price
     sns.lineplot(data=filtered_df, x='trading_day', y='market_price', label='Market Price', ax=axs[0], color='steelblue', alpha=0.7)
     sns.lineplot(data=filtered_df, x='trading_day', y='true_value', label='True Value', ax=axs[0], color='seagreen', alpha=0.7)
-    axs[0].set_title(f"Market Price and True Value Over Time, Agents: {agents},  Corr: {corr:.2f}, Efficiency: {eff:.2%}")
+    axs[0].set_title(f"Prices Over Time [Agents: {agents}, MT: {share_mt:.0%}, IC: {ic}, Corr: {corr:.2f}, MSE: {mse:.1f} ]")
     axs[0].set_ylabel('Price')
 
 
@@ -109,3 +113,9 @@ def evaluate_market_efficiency(df):
     rel_efficiency = 1 - (avg_deviation / avg_true_value)
     # print(f"Durchschnittliche Abweichung Marktpreis vs. fundamentaler Wert: {rel_efficiency:.2f}")
     return rel_efficiency
+
+def calc_mse(df): 
+    prices = df["market_price"].values
+    true_vals = df["true_value"].values
+    mse = mean_squared_error(prices, true_vals)
+    return mse
