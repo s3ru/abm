@@ -1,12 +1,13 @@
+import logging
 import random
 from typing import List
 
 import mesa
 import numpy as np
-from file_logger import get_logger
 from helper import getRandomUniform, lognormal, normal
 from limit_order import LimitOrder, OrderStatus
 
+logger = logging.getLogger("batch_log")
 
 class Trader(mesa.Agent):
     def __init__(self, model):
@@ -128,7 +129,7 @@ class Trader(mesa.Agent):
         if not self.is_marginal_trader:
             return
         
-        if random.random() > self.get_decision_threshold():
+        if random.random() > self.overconfidence:
             # if the trader is overconfident, buys information more frequently
             # also models coordination problem across informed traders
             return
@@ -151,14 +152,12 @@ class Trader(mesa.Agent):
             # simulates coordination problem across informed traders
             self.informed = True
             return
-        else:
-            self.informed = False
             
         self.informed = True
         self.num_bought_information += 1
         self.last_bought_information = self.model.current_day
         self.cash -= ic
-        self.estimated_true_value = round(self.model.true_value * (1 + self.valuation_bias) ,2)
+        self.estimated_true_value = round(self.model.true_value * (1 + self.valuation_bias), 2)
 
 
     def calculate_pnl(self):
@@ -197,19 +196,28 @@ class Trader(mesa.Agent):
 
     def decide_to_trade(self):
 
-        if not getRandomUniform(0, 1) <= self.get_decision_threshold():
+        if random.random() > self.overconfidence:
             return
+        
+        # if self.is_marginal_trader and self.informed:
+            # print(f"Trader {self.unique_id} is informed and marginal trader, no decision to trade.")
 
         decision = 0
 
         # decide to trade if portfolio allocation is not in line with risk appetite
-        portfolio_share_stocks = self.get_portfolio_share_stocks()
+        portfolio_share_stocks = self.get_portfolio_share_stocks_with_open_orders()
         diff_portfolio_alloc = self.risk_appetit - portfolio_share_stocks
-        rel_diff_portfolio_alloc = diff_portfolio_alloc / self.risk_appetit
+        # rel_diff_portfolio_alloc = diff_portfolio_alloc / self.risk_appetit
         # print(f"Trader {self.unique_id} portfolio share stocks: {portfolio_share_stocks:.2%}, diff wrt risk appetite: {diff_relative:.2%}")
 
         # print(f"Trader {self.unique_id} is considering selling shares based on portfolio allocation...")
-        decision += rel_diff_portfolio_alloc
+        if abs(diff_portfolio_alloc) > 0.1 and not self.is_marginal_trader:
+            # if the difference is greater than 10%, the trader decides to trade
+            decision += diff_portfolio_alloc
+        elif abs(diff_portfolio_alloc) > 0.3 and self.is_marginal_trader:
+            # noise trader risk
+            logger.info(f"{self.unique_id}: MT has to trade based on portfolio allocation... noise trader risk")
+            decision += diff_portfolio_alloc
             
 
         # decide to trade if own price estimation is significantly different from market price
@@ -231,7 +239,8 @@ class Trader(mesa.Agent):
                 )
                 self.orders.append(order)
                 self.model.process_order(order)
-                get_logger().info(f"{self.unique_id}: {'Marginal ' if self.is_marginal_trader else ''}Trader {self.is_marginal_trader}  placed a {direction} order of size {order_size} at limit price {order.price}, market price is {self.model.get_market_price()}")
+                if self.is_marginal_trader:
+                    logger.info(f"{self.unique_id}: MT placed a {direction} order of size {order_size} at limit price {order.limit_price}, expected price is {self.estimated_true_value}, true value is {self.model.true_value}, market price is {self.model.get_market_price()}")
         # else:
             # print(f"Trader {self.unique_id} decided not to trade.")
 

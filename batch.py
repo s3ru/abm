@@ -21,25 +21,28 @@ def filter_last_day_data(data):
     return data[data['trading_day'] == last_trading_day]
 
 
-runtime = current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-setup_logger('batch_logger', os.path.join(get_path(runtime)))
+runtime = current_time = datetime.now().strftime("%Y%m%d_%H%M")
+setup_logger('app_log', os.path.join(get_path(runtime), f"app_{runtime}.log"))
 
 # error
-# n_days = 50
-# n_agents = 50
-# range_share_mt = np.linspace(0.05, 0.15, 2)
-# print(f"# values for share of marginal traders: {len(range_share_mt)}")
-# range_cost_info = range(200, 1001, 200)
-# print(f"# values for cost of information: {len(range_cost_info)}")
-
+n_days = 50
+n_agents = 250
+range_share_mt = np.linspace(0.05, 0.15, 2)
+print(f"# values for share of marginal traders: {len(range_share_mt)}")
+range_cost_info = range(100, 500, 300)
+print(f"# values for cost of information: {len(range_cost_info)}")
+iterations = 2
 
 # quick
-n_days = 200
-n_agents = 1000
-range_share_mt = np.linspace(0.00, 0.3, 6)
-print(f"# values for share of marginal traders: {len(range_share_mt)}")
-range_cost_info = range(100, 601, 250)
-print(f"# values for cost of information: {len(range_cost_info)}")
+# n_days = 100
+# n_agents = 500
+# range_share_mt = np.linspace(0.05, 0.35, 3)
+# print(f"# values for share of marginal traders: {len(range_share_mt)}")
+# range_cost_info = range(100, 501, 200)
+# print(f"# values for cost of information: {len(range_cost_info)}")
+# iterations = 2
+
+
 
 # prod
 # n_days = 200
@@ -48,6 +51,7 @@ print(f"# values for cost of information: {len(range_cost_info)}")
 # print(f"# values for share of marginal traders: {len(range_share_mt)}")
 # range_cost_info = range(250, 2501, 250)
 # print(f"# values for cost of information: {len(range_cost_info)}")
+# iterations = 5
 
 
 
@@ -72,7 +76,7 @@ params = {
 results = mesa.batch_run(
     LimitOrderMarket,
     parameters=params,
-    iterations=1,
+    iterations=iterations,
     max_steps= params["n_days"],
     number_processes=1,
     data_collection_period=1,
@@ -80,6 +84,10 @@ results = mesa.batch_run(
 )
 
 results_df = pd.DataFrame(results)
+save_df_to_excel(results_df, runtime, "results")
+
+
+
 # print(f"The results have {len(results)} rows.")
 # print(f"The columns of the data frame are {list(results_df.keys())}.")
 # print(results_df.head())
@@ -94,33 +102,54 @@ sensitivity_m_pnl_vola = np.zeros((len(range_cost_info), len(range_share_mt)))
 
 for i, ic in enumerate(range_cost_info):
     # rows 
+    df_filtered_ic = results_df[results_df['cost_of_information'] == ic]
+
     for j, mt in enumerate(range_share_mt):
         # cols
+        df_filtered_mt =  df_filtered_ic[df_filtered_ic['share_of_marginal_traders'] == mt]
 
-        df_filtered =  results_df[results_df['cost_of_information'] == ic]
-        df_filtered =  df_filtered[df_filtered['share_of_marginal_traders'] == mt]
-        df_filtered = df_filtered.iloc[starting_phase:].reset_index(drop=True)
+        corr_arr = []
+        mse_arr = []
+        vola_arr = []
+        avg_pnl_marginal_arr = []
+        avg_pnl_non_marginal_arr = []
 
-        df_filterd_m = df_filtered[get_market_cols()].drop_duplicates()
-        df_filterd_m.reset_index(drop=True, inplace=True)
+        for iteration in range(iterations):
+            df_filtered = df_filtered_mt[df_filtered_mt['iteration'] == iteration]
+            df_filtered = df_filtered.iloc[starting_phase:].reset_index(drop=True)
+            # print(f"Iteration: {iteration}")
 
-        correlation = get_price_correlation(df_filterd_m)
-        sensitivity_m_corr[i, j] = correlation
-        mse = calc_mse(df_filterd_m)
-        sensitivity_m_mse[i, j] = mse
 
-        volatility = df_filterd_m['market_price'].std()
-        sensitivity_m_pnl_vola[i, j] = volatility
+            df_filterd_m = df_filtered[get_market_cols()].drop_duplicates()
+            df_filterd_m.reset_index(drop=True, inplace=True)
 
-        df_filtered_a = df_filterd[get_agent_cols()].drop_duplicates()
-        df_filtered_a.reset_index(drop=True, inplace=True)
-        df_filterd = filter_last_day_data(df_filtered_a)
-        avg_pnl_marginal = df_filterd[is_marginal_trader(df_filtered_a)]['PnL'].mean()
-        sensitivity_m_pnl_mt[i, j] = round(avg_pnl_marginal, 2)
+            correlation = get_price_correlation(df_filterd_m)
+            corr_arr.append(correlation)
 
-        avg_pnl_non_marginal = df_filterd[is_non_marginal_trader(df_filtered_a)]['PnL'].mean()
-        sensitivity_m_pnl_nmt[i, j] = round(avg_pnl_non_marginal, 2)
+            mse = calc_mse(df_filterd_m)
+            mse_arr.append(mse)
+
+            volatility = df_filterd_m['market_price'].std()
+            vola_arr.append(volatility)
+
+
+            df_filtered_a = df_filtered[get_agent_cols()].drop_duplicates()
+            df_filtered_a.reset_index(drop=True, inplace=True)
+            df_filtered_a = filter_last_day_data(df_filtered_a)
+
+            avg_pnl_marginal = df_filtered_a[is_marginal_trader(df_filtered_a)]['PnL'].mean()
+            avg_pnl_marginal_arr.append(avg_pnl_marginal)
+
+            avg_pnl_non_marginal = df_filtered_a[is_non_marginal_trader(df_filtered_a)]['PnL'].mean()
+            avg_pnl_non_marginal_arr.append(avg_pnl_non_marginal)
+
+        sensitivity_m_corr[i, j] = round(np.mean(corr_arr), 2)
+        sensitivity_m_mse[i, j] = round(np.mean(mse_arr), 2)
+        sensitivity_m_pnl_vola[i, j] = round(np.mean(vola_arr), 2)
+        sensitivity_m_pnl_mt[i, j] = round(np.mean(avg_pnl_marginal_arr), 2)
+        sensitivity_m_pnl_nmt[i, j] = round(np.mean(avg_pnl_non_marginal_arr), 2)
         
+
 sensitivity_df_corr = pd.DataFrame(
     sensitivity_m_corr,
     index=[f"ic={v:.0f}" for v in range_cost_info],

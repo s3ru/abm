@@ -29,6 +29,7 @@ def create_viz(df, runtime):
 def create_skill_histogram(df, runtime):
         # Filter for the last trading day
     run_id = df.iloc[0]["RunId"]
+    iteration = df.iloc[0]["iteration"]
     last_trading_day = df['trading_day'].max()
     last_day_data = df[df['trading_day'] == last_trading_day]
 
@@ -49,10 +50,10 @@ def create_skill_histogram(df, runtime):
     plt.ylabel('Count')
     plt.legend(title='Trader Type')
 
-    save_plt_as_img(plt, runtime, f"skill_histogram_{run_id}")
+    save_plt_as_img(plt, runtime, f"skill_histogram_{run_id}_{iteration}")
 
     agent_data = df[get_agent_cols()].drop_duplicates()
-    save_df_to_excel(agent_data, runtime, f"agent_data_{run_id}")
+    save_df_to_excel(agent_data, runtime, f"agent_data_{run_id}_{iteration}")
 
 
     # plt.show()
@@ -69,6 +70,7 @@ def create_price_chart(df, runtime):
 
     # model parameters 
     run_id = df.iloc[0][run_id_col]
+    iteration = df.iloc[0]["iteration"]
     agents = df.iloc[0][num_agents_col]
     share_mt = df.iloc[0][share_of_marginal_traders_col]
     ic = df.iloc[0][cost_of_information_col]
@@ -133,8 +135,8 @@ def create_price_chart(df, runtime):
 
 
     # save results to filesystem
-    save_plt_as_img(plt, runtime, f"price_chart_{run_id}")
-    save_df_to_excel(df, runtime, f"price_data_{run_id}")
+    save_plt_as_img(plt, runtime, f"price_chart_{run_id}_{iteration}")
+    save_df_to_excel(df, runtime, f"price_data_{run_id}_{iteration}")
     # plt.show()
 
 
