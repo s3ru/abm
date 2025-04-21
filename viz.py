@@ -84,8 +84,8 @@ def create_viz(df):
     file_path = os.path.join(current_folder, 'img', f"price_chart__{current_time}.png")
     plt.savefig(file_path, dpi=300, bbox_inches='tight')
 
-    file_path_csv = os.path.join(current_folder, 'data', f"df__{current_time}.xlsx")
-    df.to_excel(file_path_csv, index=True)
+    file_path_xlsx = os.path.join(current_folder, 'data', f"df__{current_time}.xlsx")
+    df.to_excel(file_path_xlsx, index=True)
     plt.show()
 
 
@@ -119,3 +119,9 @@ def calc_mse(df):
     true_vals = df["true_value"].values
     mse = mean_squared_error(prices, true_vals)
     return mse
+
+def save_df_to_excel(df, prefix):
+    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = os.path.join(current_folder, 'data', f"{prefix}__{current_time}.xlsx")
+    df.to_excel(file_path, index=True)
+    print(f"DataFrame saved to {file_path}")

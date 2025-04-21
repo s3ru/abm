@@ -1,15 +1,24 @@
 import mesa
 from limit_order_market import LimitOrderMarket
 import pandas as pd
+import numpy as np
+from viz import calc_mse, create_viz, get_price_correlation, save_df_to_excel
 
-from viz import create_viz
+
+# quick
+range_share_mt = np.linspace(0.05, 0.5, 3)
+range_cost_info = range(500, 1500, 500)
+
+# prod
+# range_share_mt = np.linspace(0.05, 0.5, 10)
+# range_cost_info = range(500, 5001, 500)
 
 starting_phase = 10
 params = {
     "num_agents": 500, # range(250, 1001, 250),
     "n_days": 200, # 50, # 200,
-    "share_of_marginal_traders": range(0.05, 0.50001, 0.05),
-    "cost_of_information": range(500, 5000, 500),
+    "share_of_marginal_traders": range_share_mt,
+    "cost_of_information": range_cost_info,
     # "start_true_value": 100,
     # "decision_threshold": 0.05,
     # "order_expiration": 10,
@@ -36,20 +45,45 @@ results_df = pd.DataFrame(results)
 # print(f"The results have {len(results)} rows.")
 # print(f"The columns of the data frame are {list(results_df.keys())}.")
 # print(results_df.head())
+sensitivity_m_corr = np.zeros((len(range_share_mt), len(range_cost_info)))
+sensitivity_m_mse = np.zeros((len(range_share_mt), len(range_cost_info)))
 
-# sensitivity_df = pd.DataFrame(
-#     sensitivity_matrix,
-#     index=[f"Var1={v:.2f}" for v in var1_values],
-#     columns=[f"Var2={v:.0f}" for v in var2_values]
-# )
 
+for i, ic in range_cost_info:
+    for j, mt in range_share_mt:
+        # Example calculation: Replace this with your model's calculation
+        df_filtered =  results_df[results_df['cost_of_information'] == ic]
+        df_filtered =  df_filtered[df_filtered['share_of_marginal_traders'] == mt]
+
+        correlation = get_price_correlation(df_filtered)
+        sensitivity_m_corr[i, j] = correlation
+        mse = calc_mse(df_filtered)
+        sensitivity_m_mse[i, j] = mse
+        # print(f"Correlation: {correlation:.2f}, MSE: {mse:.2f}")
+
+
+
+sensitivity_df_corr = pd.DataFrame(
+    sensitivity_m_corr,
+    index=[f"ic={v:.2f}" for v in range_cost_info],
+    columns=[f"mt={v:.0f}" for v in range_share_mt]
+)
+
+sensitivity_df_mse = pd.DataFrame(
+    sensitivity_m_corr,
+    index=[f"ic={v:.2f}" for v in range_cost_info],
+    columns=[f"mt={v:.0f}" for v in range_share_mt]
+)
+
+save_df_to_excel(sensitivity_df_corr, "corr")
+save_df_to_excel(sensitivity_df_mse, "mse")
 
 # Iterate over each unique combination of RunId and iteration
 for (run_id, iteration), group_data in results_df.groupby(["RunId", "iteration"]):
 
     sel_columns = ['Step', 'num_agents', 'n_days', 'trading_day', 'market_price', 'info_event',
                 'true_value', 'bid_ask_spread', 'volume', 'shares_outstanding', 'share_of_marginal_traders',
-                'rel_distance_sell_orders', 'rel_distance_buy_orders', 'cost_of_information', 'is_marginal_trader', 'PnL', 'num_bought_information', 'mum_budget_contstraint']
+                'rel_distance_sell_orders', 'rel_distance_buy_orders', 'cost_of_information', 'is_marginal_trader', 'PnL', 'num_bought_information', 'num_budget_contstraint']
     # print(f"Generating visualization for RunId: {run_id}, Iteration: {iteration}")
 
     rows_for_eval = group_data[sel_columns].drop_duplicates()

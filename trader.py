@@ -19,7 +19,7 @@ class Trader(mesa.Agent):
         
         self.last_bought_information = None
         self.informed = False
-        self.mum_budget_contstraint = 0
+        self.num_budget_contstraint = 0
         self.num_bought_information = 0
 
         # starting portfolio allocation
@@ -127,7 +127,7 @@ class Trader(mesa.Agent):
         
         ic = self.model.cost_of_information
         if self.cash < ic or ic > 0.05 * self.get_total_wealth():
-            mum_budget_contstraint += 1
+            self.num_budget_contstraint += 1
             # if the cost of information is too high, don't buy it
             return
 
