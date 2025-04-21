@@ -22,7 +22,7 @@ def filter_last_day_data(data):
 
 
 runtime = current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-setup_logger('batch_logger', os.path.join(get_path(runtime), 'run.log'))
+setup_logger('batch_logger', os.path.join(get_path(runtime)))
 
 # error
 # n_days = 50
@@ -101,7 +101,7 @@ for i, ic in enumerate(range_cost_info):
         df_filtered =  df_filtered[df_filtered['share_of_marginal_traders'] == mt]
         df_filtered = df_filtered.iloc[starting_phase:].reset_index(drop=True)
 
-        df_filterd_m = df_filterd[get_market_cols()].drop_duplicates()
+        df_filterd_m = df_filtered[get_market_cols()].drop_duplicates()
         df_filterd_m.reset_index(drop=True, inplace=True)
 
         correlation = get_price_correlation(df_filterd_m)

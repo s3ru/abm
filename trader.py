@@ -3,6 +3,7 @@ from typing import List
 
 import mesa
 import numpy as np
+from file_logger import get_logger
 from helper import getRandomUniform, lognormal, normal
 from limit_order import LimitOrder, OrderStatus
 
@@ -31,7 +32,7 @@ class Trader(mesa.Agent):
         self.orders: List[LimitOrder] = [] # List of LimitOrder objects
 
         # skill
-        self.skill = max(0.01, min(1, round(normal(0.75 if self.is_marginal_trader else 0.5, 0.1), 2)))
+        self.skill = max(0.01, min(1, round(normal(0.8 if self.is_marginal_trader else 0.5, 0.1), 2)))
 
         # valuation bias
         self.valuation_bias = round(normal(0.05, 0.05 if self.is_marginal_trader else 0.1), 4)
@@ -177,11 +178,22 @@ class Trader(mesa.Agent):
         """
         return (self.num_of_shares * self.model.get_market_price()) / self.get_total_wealth()
     
+    def get_portfolio_share_stocks_with_open_orders(self):
+
+        return ((self.num_of_shares + self.volume_active_orders()) * self.model.get_market_price()) / self.get_total_wealth()
+
+    
     def has_active_orders(self):
         """
         Returns True if the trader has active orders, False otherwise.
         """
         return any(order.get_status() == OrderStatus.OPEN or order.get_status() == OrderStatus.PARTIALLY_FILLED for order in self.orders)
+
+    def volume_active_orders(self):
+        """
+        Returns the volume of active orders.
+        """
+        return sum(order.get_quantity_unfilled() for order in self.orders if order.get_status() == OrderStatus.OPEN or order.get_status() == OrderStatus.PARTIALLY_FILLED)
 
     def decide_to_trade(self):
 
@@ -196,16 +208,14 @@ class Trader(mesa.Agent):
         rel_diff_portfolio_alloc = diff_portfolio_alloc / self.risk_appetit
         # print(f"Trader {self.unique_id} portfolio share stocks: {portfolio_share_stocks:.2%}, diff wrt risk appetite: {diff_relative:.2%}")
 
-        if abs(rel_diff_portfolio_alloc) > self.get_decision_threshold():
-            # print(f"Trader {self.unique_id} is considering selling shares based on portfolio allocation...")
-            decision += rel_diff_portfolio_alloc
+        # print(f"Trader {self.unique_id} is considering selling shares based on portfolio allocation...")
+        decision += rel_diff_portfolio_alloc
             
 
         # decide to trade if own price estimation is significantly different from market price
         rel_deviation_price_estimation = (self.estimated_true_value - self.model.get_market_price()) / self.model.get_market_price()
         # print(f"Trader {self.unique_id} relative deviation price estimation: {rel_deviation_price_estimation:.2%}")
-        if abs(rel_deviation_price_estimation) > self.get_decision_threshold():
-            decision += rel_deviation_price_estimation
+        decision += rel_deviation_price_estimation
             
     
         if abs(decision) > self.get_decision_threshold():
@@ -221,6 +231,7 @@ class Trader(mesa.Agent):
                 )
                 self.orders.append(order)
                 self.model.process_order(order)
+                get_logger().info(f"{self.unique_id}: {'Marginal ' if self.is_marginal_trader else ''}Trader {self.is_marginal_trader}  placed a {direction} order of size {order_size} at limit price {order.price}, market price is {self.model.get_market_price()}")
         # else:
             # print(f"Trader {self.unique_id} decided not to trade.")
 
@@ -266,31 +277,14 @@ class Trader(mesa.Agent):
         Returns the limit price for the order.
         """
         # Example logic for determining the limit price
+        safety_margin = self.estimated_true_value * max(0, normal(0.02, 0.01))
         if order_type == "buy":
-            safety_margin = self.estimated_true_value * max(0, normal(0.10, 0.1))
-            return min(round(self.estimated_true_value - self.risk_aversion * safety_margin, 2), self.model.get_ask_quote_lob())
+            return round(self.estimated_true_value - self.risk_aversion * safety_margin, 2)
         else:
-            safety_margin = self.estimated_true_value * max(0, normal(0.10, 0.1))
-            return max(round(self.estimated_true_value + self.risk_aversion * safety_margin, 2), self.model.get_bid_quote_lob())
+            return round(self.estimated_true_value + self.risk_aversion * safety_margin, 2)
 
 
-    # def make_decision(self):
-    #     print(f"Trader {self.unique_id} is making a decision...")
-    #     # Example decision logic
-    #     if self.cash > 50:
-    #         print(f"Trader {self.unique_id} has sufficient cash: {self.cash}. Considering placing a buy order.")
-    #         self.place_order("buy")
-    #     else:
-    #         print(f"Trader {self.unique_id} has insufficient cash: {self.cash}. Considering placing a sell order.")
-    #         self.place_order("sell")
-
-    # def place_order(self, order_type):
-    #     print(f"Trader {self.unique_id} placing a {order_type} order...")
-    #     # Example order placement logic
-    #     price = self.model.current_v * (1 + (0.01 if order_type == "buy" else -0.01))
-    #     print(f"Trader {self.unique_id} {order_type} order price: {price}")
-    #     self.model.lob.append((order_type, price, self))
-    #     print(f"Trader {self.unique_id} {order_type} order added to the order book.")
+    
 
 
 
