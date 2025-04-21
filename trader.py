@@ -10,6 +10,7 @@ from limit_order import LimitOrder, OrderStatus
 class Trader(mesa.Agent):
     def __init__(self, model):
         super().__init__(model)
+        self.pnl = 0.0
         self.init_wealth = round(self.model.wealth_min * (1 + np.random.pareto(self.model.wealth_alpha)))
         self.is_marginal_trader = True if random.random() <= self.model.share_of_marginal_traders else False
        
@@ -19,11 +20,11 @@ class Trader(mesa.Agent):
         
         self.last_bought_information = None
         self.informed = False
-        self.num_budget_contstraint = 0
+        self.info_budget_constraint = False
         self.num_bought_information = 0
 
         # starting portfolio allocation
-        self.starting_share_alloc_cash = (self.risk_appetit + getRandomUniform(-0.05, 0.05)) * self.init_wealth
+        self.starting_share_alloc_cash = (self.risk_appetit + getRandomUniform(-0.025, 0.025)) * self.init_wealth
         self.num_of_shares = round(self.starting_share_alloc_cash / self.model.initial_market_price)
         self.cash = self.init_wealth - self.num_of_shares * self.model.initial_market_price
         self.cash_chg_liquidity_events = 0
@@ -70,6 +71,7 @@ class Trader(mesa.Agent):
         # print(f"Trader {self.unique_id} starting step...")
         self.estimate_true_value()
         self.decide_to_trade()
+        self.calculate_pnl()
         # print(f"Trader {self.unique_id} completed step.")
 
     def estimate_true_value(self):
@@ -125,16 +127,23 @@ class Trader(mesa.Agent):
         if not self.is_marginal_trader:
             return
         
+        if random.random() > self.get_decision_threshold():
+            # if the trader is overconfident, buys information more frequently
+            # also models coordination problem across informed traders
+            return
+        
         ic = self.model.cost_of_information
         if self.cash < ic or ic > 0.05 * self.get_total_wealth():
-            self.num_budget_contstraint += 1
+            self.info_budget_constraint = True
             # if the cost of information is too high, don't buy it
             return
+        else:
+            self.info_budget_constraint = False
 
-        mp = self.model.get_market_price()
-        if abs(self.estimated_true_value - mp) / mp < 0.05:
-            # if the estimated true value is close to the market price, don't buy it
-            return
+        # mp = self.model.get_market_price()
+        # if abs(self.estimated_true_value - mp) / mp < 0.05:
+        #     # if the estimated true value is close to the market price, don't buy it
+        #     return
         
         if self.last_bought_information is not None and (self.model.current_day - self.last_bought_information) < 5:
             # if the trader has already bought information, don't buy it again
@@ -158,7 +167,7 @@ class Trader(mesa.Agent):
         # Calculate PnL based on current market price and number of shares held
         wealth = self.get_total_wealth()
         wealth_adj = wealth - self.cash_chg_liquidity_events
-        self.pnl = wealth_adj / self.init_wealth - 1  # PnL as a percentage of initial wealth
+        self.pnl = (wealth_adj - self.init_wealth) / self.init_wealth  # PnL as a percentage of initial wealth
         # print(f"Trader {self.unique_id} PnL: {self.pnl:.2%}")
      
 
@@ -176,10 +185,7 @@ class Trader(mesa.Agent):
 
     def decide_to_trade(self):
 
-        if not getRandomUniform(0, 1) <= self.overconfidence:
-            return
-        
-        if self.has_active_orders():
+        if not getRandomUniform(0, 1) <= self.get_decision_threshold():
             return
 
         decision = 0

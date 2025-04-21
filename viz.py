@@ -3,51 +3,103 @@ import os
 from datetime import datetime
 from sklearn.metrics import mean_squared_error
 import seaborn as sns
+
+from helper import get_agent_cols, get_market_cols
 print(sns.__version__)
 import matplotlib.pyplot as plt
 import pandas as pd
 pd.set_option('future.no_silent_downcasting', True)
 import numpy as np
 
+# col names model parameters
+run_id_col = 'RunId'
+share_of_marginal_traders_col = 'share_of_marginal_traders'
+cost_of_information_col = 'cost_of_information'
+num_agents_col = 'num_agents'
+n_days_col = 'n_days'
+
+
 # Get the directory of the current file
 current_folder = os.path.dirname(os.path.abspath(__file__))
 
-def create_viz(df):
+def create_viz(df, runtime):
+    create_price_chart(df, runtime)
+    create_skill_histogram(df, runtime)
+
+def create_skill_histogram(df, runtime):
+        # Filter for the last trading day
+    run_id = df.iloc[0]["RunId"]
+    last_trading_day = df['trading_day'].max()
+    last_day_data = df[df['trading_day'] == last_trading_day]
+
+    # Filter data for marginal and non-marginal traders
+    marginal_traders = last_day_data[last_day_data['is_marginal_trader'] == True]
+    non_marginal_traders = last_day_data[last_day_data['is_marginal_trader'] == False]
+
+    # Create the histogram
+    plt.figure(figsize=(10, 6))
+    sns.histplot(non_marginal_traders['skill'], color='darkgrey', label='Non-Marginal Traders', kde=False, bins=20, alpha=0.7)
+    sns.histplot(marginal_traders['skill'], color='red', label='Marginal Traders', kde=False, bins=20, alpha=1)
+
+    share_mt = df.iloc[0]["share_of_marginal_traders"]
+
+    # Add labels and legend
+    plt.title(f'Skill Distribution by Trader Type [ MT: {share_mt:.0%} ]')
+    plt.xlabel('Skill')
+    plt.ylabel('Count')
+    plt.legend(title='Trader Type')
+
+    save_plt_as_img(plt, runtime, f"skill_histogram_{run_id}")
+
+    agent_data = df[get_agent_cols()].drop_duplicates()
+    save_df_to_excel(agent_data, runtime, f"agent_data_{run_id}")
+
+
+    # plt.show()
+
+def create_price_chart(df, runtime):
     # print("Creating visualization...")
 
     # starting_phase = df.iloc[0]["starting_phase"]
     # plot market_price on searborn line chart
-    model_dfs = df
-    # model_dfs = model_dfs.iloc[starting_phase:] # remove first x days to avoid noise
-    # model_dfs = model_dfs.reset_index(drop=True)
+    df = df
+    # df = df.iloc[starting_phase:] # remove first x days to avoid noise
+    # df = df.reset_index(drop=True)
+
+
+    # model parameters 
+    run_id = df.iloc[0][run_id_col]
+    agents = df.iloc[0][num_agents_col]
+    share_mt = df.iloc[0][share_of_marginal_traders_col]
+    ic = df.iloc[0][cost_of_information_col]
+    n_days_value = df.iloc[0][n_days_col]
+
+    
+
+    info_event_col = 'info_event'
+    trading_day_col = 'trading_day'
+    market_price_col = 'market_price'
+    true_value_col = 'true_value'
+    volume_col = 'volume'
+
+    df = df[get_market_cols()].drop_duplicates()
+    df.reset_index(drop=True, inplace=True)
 
     # append information events to the dataframe
-    df_info = model_dfs.info_event # [starting_phase:]
+    df_info = df.info_event # [starting_phase:]
     df_info = df_info[1:] + [False] # shift for visualization
     df_info.reset_index(drop=True, inplace=True)
-    model_dfs['info_event'] = df_info
-    model_dfs['info_event'] = model_dfs['info_event'].fillna(False)
-    # model_dfs['info_event'] = df_info
+    df[info_event_col] = df_info
+    df[info_event_col] = df[info_event_col].fillna(False)
+    # df['info_event'] = df_info
 
-    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path_csv = os.path.join(current_folder, 'data', f"df__{current_time}.xlsx")
-    model_dfs.to_excel(file_path_csv, index=True)
-
-    # print head
-    # print(model_dfs.head())
-
-    # line plot with column 'market_price' and 'true_value' 
-
-    run_id = df.iloc[0]["RunId"]
-    agents = df.iloc[0]["num_agents"]
-    share_mt = df.iloc[0]["share_of_marginal_traders"]
-    ic = df.iloc[0]["cost_of_information"]
+ 
     # eff = evaluate_market_efficiency(df)
     mse = calc_mse(df)
     corr = get_price_correlation(df)
 
     selected_columns = ['trading_day', 'market_price', 'true_value', 'volume']
-    filtered_df = model_dfs[selected_columns]
+    filtered_df = df[selected_columns]
 
     # Create the figure and axes
     fig, axs = plt.subplots(2, figsize=(10, 8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
@@ -61,8 +113,8 @@ def create_viz(df):
 
 
     # Add dots on the true_value line for information events
-    event_days = filtered_df[model_dfs['info_event']]['trading_day']
-    event_values = filtered_df[model_dfs['info_event']]['true_value']
+    event_days = filtered_df[df['info_event']]['trading_day']
+    event_values = filtered_df[df['info_event']]['true_value']
     sns.scatterplot(x=event_days, y=event_values, ax=axs[0], color='darkgreen', label='Information Event', s=50)
 
 
@@ -72,47 +124,34 @@ def create_viz(df):
     axs[0].legend(h, l, title="Legend", loc="upper left")
 
 
-
     # Histogram for volume
-    n_days_value = df.iloc[0]["n_days"]
+    
     sns.histplot(data=filtered_df, x='trading_day', weights='volume', bins=round(n_days_value/2), ax=axs[1], kde=False, color='grey', alpha=0.5)
     axs[1].set_title('Volume Over Time')
     axs[1].set_ylabel('Volume')
     axs[1].set_xlabel('Trading Day')
 
-    # Save the plot to a file
-    save_plt_as_img(plt, f"price_chart_{run_id}")
-    # file_path = os.path.join(current_folder, 'img', f"price_chart__{current_time}.png")
-    # plt.savefig(file_path, dpi=300, bbox_inches='tight')
 
-    save_df_to_excel(df, f"data_{run_id}")
-    plt.show()
+    # save results to filesystem
+    save_plt_as_img(plt, runtime, f"price_chart_{run_id}")
+    save_df_to_excel(df, runtime, f"price_data_{run_id}")
+    # plt.show()
 
 
 def get_price_correlation(df):
     prices = df["market_price"].values
     true_vals = df["true_value"].values
+    return np.corrcoef(prices, true_vals)[0, 1]
 
-    # calculate pearson correlation 
-    correlation = np.corrcoef(prices, true_vals)[0, 1]
-    # print(f"Pearson-Korrelation Marktpreis vs. fundamentaler Wert: {correlation:.2f}")
-
-    # avg_deviation = np.mean(np.abs(prices - true_vals))
-    # avg_true_value = np.mean(true_vals)
-    # rel_efficiency = 1 - (avg_deviation / avg_true_value)
-    # print(f"Durchschnittliche Abweichung Marktpreis vs. fundamentaler Wert: {rel_efficiency:.2f}")
-    return correlation
-
-def evaluate_market_efficiency(df):
-    prices = df["market_price"].values
-    true_vals = df["true_value"].values
-
+# def evaluate_market_efficiency(df):
+#     prices = df["market_price"].values
+#     true_vals = df["true_value"].values
     
-    avg_deviation = np.mean(np.abs(prices - true_vals))
-    avg_true_value = np.mean(true_vals)
-    rel_efficiency = 1 - (avg_deviation / avg_true_value)
-    # print(f"Durchschnittliche Abweichung Marktpreis vs. fundamentaler Wert: {rel_efficiency:.2f}")
-    return rel_efficiency
+#     avg_deviation = np.mean(np.abs(prices - true_vals))
+#     avg_true_value = np.mean(true_vals)
+#     rel_efficiency = 1 - (avg_deviation / avg_true_value)
+#     # print(f"Durchschnittliche Abweichung Marktpreis vs. fundamentaler Wert: {rel_efficiency:.2f}")
+#     return rel_efficiency
 
 def calc_mse(df): 
     prices = df["market_price"].values
@@ -120,16 +159,18 @@ def calc_mse(df):
     mse = mean_squared_error(prices, true_vals)
     return mse
 
-def save_df_to_excel(df, prefix):
-    file_path = os.path.join(get_path(), f"{prefix}.xlsx")
+def save_df_to_excel(df, runtime, prefix):
+    file_path = os.path.join(get_path(runtime), f"{prefix}.xlsx")
+    # https://pandas.pydata.org/docs/reference/api/pandas.DataFrame.to_excel.html
     df.to_excel(file_path, index=True)
     
 
-def save_plt_as_img(plt, prefix):
-    file_path = os.path.join(get_path(), f"{prefix}.png")
+def save_plt_as_img(plt, runtime, prefix):
+    file_path = os.path.join(get_path(runtime), f"{prefix}.png")
     plt.savefig(file_path, dpi=300, bbox_inches='tight')
 
 
-def get_path():
-    current_time = datetime.now().strftime("%Y%m%d_%H%M")
-    os.makedirs(os.path.join(current_folder, 'data', current_time), exist_ok=True)
+def get_path(runtime):
+    path = os.path.join(current_folder, "data", runtime)
+    os.makedirs(path, exist_ok=True)
+    return path

@@ -64,7 +64,7 @@ class LimitOrderMarket(mesa.Model):
             model_reporters={
                              "trading_day": lambda m: m.current_day,
                              "market_price": lambda m: m.get_market_price(),
-                             "info_event":  lambda m: m.info_event_occurred,
+                             "info_event":  "info_event_occurred",
                              "true_value": lambda m: m.true_value,
                              "bid_ask_spread": lambda m: m.get_bid_ask_spread(),
                              "volume": lambda m: m.get_volume_current_trading_day(),
@@ -76,14 +76,15 @@ class LimitOrderMarket(mesa.Model):
                              "rel_distance_buy_orders": lambda m: m.get_rel_distance_buy_orders(),
                              },
             agent_reporters={
-                "PnL": lambda t: t.calculate_pnl(),
+                "PnL": "pnl",
                 "wealth": lambda t: t.get_total_wealth(),
                 "is_marginal_trader": "is_marginal_trader",
                 "cash": "cash",
+                "skill": "skill",
                 "num_of_shares": "num_of_shares",
                 "informed": "informed",
                 "num_bought_information": "num_bought_information",
-                "num_budget_contstraint": "num_budget_contstraint",
+                "info_budget_constraint": "info_budget_constraint",
                 }
         )
 
