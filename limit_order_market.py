@@ -83,7 +83,7 @@ class LimitOrderMarket(mesa.Model):
                 "num_of_shares": "num_of_shares",
                 "informed": "informed",
                 "num_bought_information": "num_bought_information",
-                "mum_budget_contstraint": "mum_budget_contstraint",
+                "num_budget_contstraint": "num_budget_contstraint",
                 }
         )
 

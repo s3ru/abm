@@ -6,17 +6,21 @@ from viz import calc_mse, create_viz, get_price_correlation, save_df_to_excel
 
 
 # quick
-range_share_mt = np.linspace(0.05, 0.5, 3)
-range_cost_info = range(500, 1500, 500)
+range_share_mt = np.linspace(0.05, 0.15, 2)
+print(len(range_share_mt))
+range_cost_info = range(500, 1001, 500)
+print(len(range_cost_info))
 
 # prod
 # range_share_mt = np.linspace(0.05, 0.5, 10)
+# print(len(range_share_mt))
 # range_cost_info = range(500, 5001, 500)
+# print(len(range_cost_info))
 
 starting_phase = 10
 params = {
-    "num_agents": 500, # range(250, 1001, 250),
-    "n_days": 200, # 50, # 200,
+    "num_agents": 500, #500, # range(250, 1001, 250),
+    "n_days": 150, #200, # 50, # 200,
     "share_of_marginal_traders": range_share_mt,
     "cost_of_information": range_cost_info,
     # "start_true_value": 100,
@@ -49,8 +53,8 @@ sensitivity_m_corr = np.zeros((len(range_share_mt), len(range_cost_info)))
 sensitivity_m_mse = np.zeros((len(range_share_mt), len(range_cost_info)))
 
 
-for i, ic in range_cost_info:
-    for j, mt in range_share_mt:
+for i, ic in enumerate(range_cost_info):
+    for j, mt in enumerate(range_share_mt):
         # Example calculation: Replace this with your model's calculation
         df_filtered =  results_df[results_df['cost_of_information'] == ic]
         df_filtered =  df_filtered[df_filtered['share_of_marginal_traders'] == mt]
@@ -66,13 +70,13 @@ for i, ic in range_cost_info:
 sensitivity_df_corr = pd.DataFrame(
     sensitivity_m_corr,
     index=[f"ic={v:.2f}" for v in range_cost_info],
-    columns=[f"mt={v:.0f}" for v in range_share_mt]
+    columns=[f"mt={v:.0%}" for v in range_share_mt]
 )
 
 sensitivity_df_mse = pd.DataFrame(
     sensitivity_m_corr,
     index=[f"ic={v:.2f}" for v in range_cost_info],
-    columns=[f"mt={v:.0f}" for v in range_share_mt]
+    columns=[f"mt={v:.0%}" for v in range_share_mt]
 )
 
 save_df_to_excel(sensitivity_df_corr, "corr")

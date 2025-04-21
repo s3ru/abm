@@ -38,7 +38,7 @@ def create_viz(df):
 
     # line plot with column 'market_price' and 'true_value' 
 
-
+    run_id = df.iloc[0]["RunId"]
     agents = df.iloc[0]["num_agents"]
     share_mt = df.iloc[0]["share_of_marginal_traders"]
     ic = df.iloc[0]["cost_of_information"]
@@ -81,11 +81,11 @@ def create_viz(df):
     axs[1].set_xlabel('Trading Day')
 
     # Save the plot to a file
-    file_path = os.path.join(current_folder, 'img', f"price_chart__{current_time}.png")
-    plt.savefig(file_path, dpi=300, bbox_inches='tight')
+    save_plt_as_img(plt, f"price_chart_{run_id}")
+    # file_path = os.path.join(current_folder, 'img', f"price_chart__{current_time}.png")
+    # plt.savefig(file_path, dpi=300, bbox_inches='tight')
 
-    file_path_xlsx = os.path.join(current_folder, 'data', f"df__{current_time}.xlsx")
-    df.to_excel(file_path_xlsx, index=True)
+    save_df_to_excel(df, f"data_{run_id}")
     plt.show()
 
 
@@ -121,7 +121,15 @@ def calc_mse(df):
     return mse
 
 def save_df_to_excel(df, prefix):
-    current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_path = os.path.join(current_folder, 'data', f"{prefix}__{current_time}.xlsx")
+    file_path = os.path.join(get_path(), f"{prefix}.xlsx")
     df.to_excel(file_path, index=True)
-    print(f"DataFrame saved to {file_path}")
+    
+
+def save_plt_as_img(plt, prefix):
+    file_path = os.path.join(get_path(), f"{prefix}.png")
+    plt.savefig(file_path, dpi=300, bbox_inches='tight')
+
+
+def get_path():
+    current_time = datetime.now().strftime("%Y%m%d_%H%M")
+    os.makedirs(os.path.join(current_folder, 'data', current_time), exist_ok=True)
