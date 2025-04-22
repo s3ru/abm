@@ -1,4 +1,6 @@
 
+from datetime import datetime, timedelta
+import logging
 import mesa
 from typing import Dict, List
 from helper import lognormal, normal, poisson
@@ -10,6 +12,9 @@ import random
 from limit_order import LimitOrder, OrderStatus, Transaction
 from trader import Trader
 import copy
+
+logger = logging.getLogger("batch_log")
+
 
 class LimitOrderMarket(mesa.Model):
     def __init__(
@@ -25,8 +30,8 @@ class LimitOrderMarket(mesa.Model):
             wealth_min=5000,
             event_info_frequency = 0.2,
             event_info_intensity = 0.5,
-            event_liquidity_frequency = 0.05,
-            event_liquidity_intensity = 1000,
+            event_liquidity_frequency = 0.01,
+            event_liquidity_intensity = 100,
             # starting_phase = 5,
         ) -> None:
         super().__init__(seed=None)
@@ -54,20 +59,32 @@ class LimitOrderMarket(mesa.Model):
         self.initial_market_price: float = round(normal(self.true_value, 5))
         # print(f"Initial market price: {self.initial_market_price}")
 
+        self.volume = 0
+        self.high_price = 0
+        self.low_price = 0
+        self.open_price = 0
+        self.close_price = 0
+
+        self.start_date = datetime.today()
+
         self.lob: List[LimitOrder] = [] # List of LimitOrder objects
         self.transactions: List[Transaction] = [] # List of transactions (price, volume)
-        self.volumes: Dict[int, float] = {}  # List of volumes
         self.information_events: List[bool] = []  # List of information events
         self.last_market_price: float = self.initial_market_price
         self.info_event_occurred: bool = False
         self.datacollector = DataCollector(
             model_reporters={
                              "trading_day": lambda m: m.current_day,
+                             "trading_date": lambda x: x.start_date + timedelta(days=x.current_day),
                              "market_price": lambda m: m.get_market_price(),
                              "info_event":  "info_event_occurred",
                              "true_value": lambda m: m.true_value,
                              "bid_ask_spread": lambda m: m.get_bid_ask_spread(),
-                             "volume": lambda m: m.get_volume_current_trading_day(),
+                             "volume": "volume",
+                             "open_price": "open_price",
+                             "high_price": "high_price",
+                             "low_price": "low_price",
+                             "close_price": "close_price",
                              "shares_outstanding": lambda m: m.get_total_shares_outstanding(),
                              "lob_skew": lambda m: m.get_lob_skew(),
                              "cost_of_information": "cost_of_information",
@@ -83,6 +100,11 @@ class LimitOrderMarket(mesa.Model):
                 "skill": "skill",
                 "num_of_shares": "num_of_shares",
                 "informed": "informed",
+                "stocks_sold": lambda t: t.get_stocks_sold_volume(),
+                "stocks_sold_avg_price": lambda t: t.get_avg_price_sold_volume(),
+                "stocks_bought": lambda t: t.get_stocks_bought_volume(),
+                "stocks_bought_avg_price": lambda t: t.get_avg_price_bought_volume(),
+                "cash_chg_liquidity_events": "cash_chg_liquidity_events",	
                 "num_bought_information": "num_bought_information",
                 "info_budget_constraint": "info_budget_constraint",
                 }
@@ -100,9 +122,9 @@ class LimitOrderMarket(mesa.Model):
 
 
     def step(self) -> None:
-        # print(f"Starting step {self.current_day}...")
-        # print(f"Number of sell orders in lob before processing: {len(self.get_sell_orders())}")
-        # print(f"Number of buy orders in lob before processing: {len(self.get_buy_orders())}")
+        logger.info(f"Starting step {self.current_day}... {self.share_of_marginal_traders:.0%} MT, {self.cost_of_information} IC")
+        logger.info(f"Number of sell orders in lob before processing: {len(self.get_sell_orders())}")
+        logger.info(f"Number of buy orders in lob before processing: {len(self.get_buy_orders())}")
         # print(f"Market price: {self.get_market_price()}")
 
         self.set_orders_expired()
@@ -124,15 +146,16 @@ class LimitOrderMarket(mesa.Model):
         for agent in self.agents:
             if poisson(self.event_liquidity_frequency):
                 old_cash = agent.cash
-                cash_change = round(normal(0.05 * agent.init_wealth, self.event_liquidity_intensity))
-                agent.cash += cash_change * random.choice([-1, 1])
-                agent.cash_chg_liquidity_events += cash_change
+                cash_change = round(normal(0.01 * agent.init_wealth, self.event_liquidity_intensity))
+                cash_change_abs = cash_change * random.choice([-1, 1])
+                agent.cash += cash_change_abs
+                agent.cash_chg_liquidity_events += cash_change_abs
                 # print(f"Agent {agent.unique_id} cash updated by {cash_change}. New cash: {agent.cash}, diff= {(agent.cash - old_cash)/old_cash:.2%}")
 
         self.agents.shuffle_do("step")
 
+        self.set_open_high_low_closing_price_trading_day()
         self.datacollector.collect(self)
-
         self.current_day += 1
         # print(f"Step {self.current_day} completed.")
 
@@ -142,6 +165,35 @@ class LimitOrderMarket(mesa.Model):
         """
         total_shares = sum(agent.num_of_shares for agent in self.agents)
         return total_shares
+    
+    def set_open_high_low_closing_price_trading_day(self):
+        """
+        Sets the open, high, low, and closing prices for the current trading day.
+        """
+        if self.current_day == 0:
+            self.open_price = self.initial_market_price
+        else:
+            self.open_price = self.close_price
+
+        if len(self.transactions) > 0:
+            prices = [transaction.price for transaction in self.transactions if transaction.trading_day == self.current_day]
+            if len(prices) > 0:
+                self.high_price = max(prices)
+                self.low_price = min(prices)
+                self.close_price = prices[-1]
+                self.volume = self.get_volume_current_trading_day()
+            else:
+                self.high_price = self.open_price
+                self.low_price = self.open_price
+                self.close_price = self.open_price
+                self.volume = 0
+        else:
+            self.high_price = self.open_price
+            self.low_price = self.open_price
+            self.close_price = self.open_price
+            self.volume = 0
+        
+
 
     def get_market_price(self) -> float:
         if len(self.transactions) > 0:

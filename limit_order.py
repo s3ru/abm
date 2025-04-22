@@ -51,9 +51,6 @@ class LimitOrder:
         else:
             return self.quantity + sum_of_transactions
         
-    
-
-        
     def get_avg_execution_price(self):
         if len(self.transactions) == 0:
             return 0

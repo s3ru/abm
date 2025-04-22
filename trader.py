@@ -27,16 +27,18 @@ class Trader(mesa.Agent):
 
         # starting portfolio allocation
         self.starting_share_alloc_cash = (self.risk_appetit + getRandomUniform(-0.025, 0.025)) * self.init_wealth
-        self.num_of_shares = round(self.starting_share_alloc_cash / self.model.initial_market_price)
-        self.cash = self.init_wealth - self.num_of_shares * self.model.initial_market_price
+        self.initial_num_shares = round(self.starting_share_alloc_cash / self.model.initial_market_price)
+        self.num_of_shares = self.initial_num_shares
+        self.initial_cash = self.init_wealth - self.num_of_shares * self.model.initial_market_price
+        self.cash = self.initial_cash
         self.cash_chg_liquidity_events = 0
         self.orders: List[LimitOrder] = [] # List of LimitOrder objects
 
         # skill
-        self.skill = max(0.01, min(1, round(normal(0.8 if self.is_marginal_trader else 0.5, 0.1), 2)))
+        self.skill = max(0.01, min(1, round(normal(0.8 if self.is_marginal_trader else 0.5, 0.05), 2)))
 
         # valuation bias
-        self.valuation_bias = round(normal(0.05, 0.05 if self.is_marginal_trader else 0.1), 4)
+        self.valuation_bias = round(normal(0.02, 0.02 if self.is_marginal_trader else 0.04), 4)
 
         # overconfidence
         self.overconfidence = round(normal(0.4 if self.is_marginal_trader else 0.5, 0.1), 2)
@@ -61,6 +63,7 @@ class Trader(mesa.Agent):
         Returns the total wealth of the trader.
         """
         if self.model.current_day == self.model.n_days:
+            # liquidation day
             return self.cash + self.num_of_shares * self.model.true_value
         
         return self.cash + self.num_of_shares * self.model.get_market_price() 
@@ -164,10 +167,19 @@ class Trader(mesa.Agent):
         """
         Calculates the profit and loss (PnL) of the trader.
         """
-        # Calculate PnL based on current market price and number of shares held
-        wealth = self.get_total_wealth()
-        wealth_adj = wealth - self.cash_chg_liquidity_events
-        self.pnl = (wealth_adj - self.init_wealth) / self.init_wealth  # PnL as a percentage of initial wealth
+
+        is_liqudation_day = self.model.current_day == self.model.n_days
+        calculation_price = self.model.true_value if is_liqudation_day else self.model.get_market_price()
+
+        initial_wealth = self.initial_num_shares * calculation_price + self.initial_cash
+        current_wealth = self.num_of_shares * calculation_price + self.cash
+        current_wealth_adj = current_wealth - self.cash_chg_liquidity_events
+        self.pnl = round((current_wealth_adj - initial_wealth) / initial_wealth, 6)
+        if is_liqudation_day:
+            logger.info(f"Trader {self.unique_id} PnL: {self.pnl:.4%} (liquidation day)")
+
+
+      # PnL as a percentage of initial wealth
         # print(f"Trader {self.unique_id} PnL: {self.pnl:.2%}")
      
 
@@ -214,10 +226,10 @@ class Trader(mesa.Agent):
         if abs(diff_portfolio_alloc) > 0.1 and not self.is_marginal_trader:
             # if the difference is greater than 10%, the trader decides to trade
             decision += diff_portfolio_alloc
-        elif abs(diff_portfolio_alloc) > 0.3 and self.is_marginal_trader:
-            # noise trader risk
-            logger.info(f"{self.unique_id}: MT has to trade based on portfolio allocation... noise trader risk")
-            decision += diff_portfolio_alloc
+        # elif abs(diff_portfolio_alloc) > 0.3 and self.is_marginal_trader:
+        #     # noise trader risk
+        #     logger.info(f"{self.unique_id}: MT has to trade based on portfolio allocation... noise trader risk")
+        #     decision += diff_portfolio_alloc
             
 
         # decide to trade if own price estimation is significantly different from market price
@@ -240,15 +252,47 @@ class Trader(mesa.Agent):
                 self.orders.append(order)
                 self.model.process_order(order)
                 if self.is_marginal_trader:
-                    logger.info(f"{self.unique_id}: MT placed a {direction} order of size {order_size} at limit price {order.limit_price}, expected price is {self.estimated_true_value}, true value is {self.model.true_value}, market price is {self.model.get_market_price()}")
+                    logger.info(f"{self.unique_id}: MT placed a {direction} order of size {order_size} at limit price {order.limit_price}, expected price is {self.estimated_true_value} Bias({self.valuation_bias:.2%}), true value is {self.model.true_value}, market price is {self.model.get_market_price()}")
         # else:
             # print(f"Trader {self.unique_id} decided not to trade.")
 
+    def get_stocks_sold_volume(self):
+        """
+        Returns the volume of stocks sold.
+        """
+        return sum(order.quantity + order.get_quantity_unfilled() for order in self.orders if order.get_order_type() == "sell" and (order.get_status() == OrderStatus.FILLED or order.get_status() == OrderStatus.PARTIALLY_FILLED))
+
+
+    def get_avg_price_sold_volume(self):
+        """
+        Returns the average price of stocks sold.
+        """
+        if self.get_stocks_sold_volume() == 0:
+            return 0
+
+        return sum(order.get_avg_execution_price() * (order.quantity + order.get_quantity_unfilled()) for order in self.orders if order.get_order_type() == "sell" and (order.get_status() == OrderStatus.FILLED or order.get_status() == OrderStatus.PARTIALLY_FILLED)) / self.get_stocks_sold_volume()
+
+    def get_stocks_bought_volume(self):
+        """
+        Returns the volume of stocks bought.
+        """
+        return sum(order.quantity - order.get_quantity_unfilled() for order in self.orders if order.get_order_type() == "buy" and (order.get_status() == OrderStatus.FILLED or order.get_status() == OrderStatus.PARTIALLY_FILLED))
+
+
+    def get_avg_price_bought_volume(self):
+        """
+        Returns the average price of stocks bought.
+        """
+        if self.get_stocks_bought_volume() == 0:
+            return 0
+
+        return sum(order.get_avg_execution_price() * (order.quantity - order.get_quantity_unfilled()) for order in self.orders if order.get_order_type() == "buy" and (order.get_status() == OrderStatus.FILLED or order.get_status() == OrderStatus.PARTIALLY_FILLED)) / self.get_stocks_bought_volume()
+
+
+
 
     def get_order_size(self, direction):
-        diff_portfolio_alloc = self.risk_appetit - self.get_portfolio_share_stocks()
-        num_of_stocks = round(diff_portfolio_alloc * self.get_total_wealth() / self.model.get_market_price())
-        
+              
 
         # Ensure the order size is within the available cash
         if direction == "buy":

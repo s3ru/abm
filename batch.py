@@ -6,7 +6,7 @@ from helper import get_agent_cols, get_market_cols
 from limit_order_market import LimitOrderMarket
 import pandas as pd
 import numpy as np
-from viz import calc_mse, create_viz, get_path, get_price_correlation, save_df_to_excel
+from viz import calc_mse, create_viz, get_path, get_price_correlation, get_price_correlation_with_lag, save_df_to_excel
 
 
 # vizualization per run_id and iteration
@@ -25,37 +25,37 @@ runtime = current_time = datetime.now().strftime("%Y%m%d_%H%M")
 setup_logger('app_log', os.path.join(get_path(runtime), f"app_{runtime}.log"))
 
 # error
-n_days = 50
-n_agents = 250
-range_share_mt = np.linspace(0.05, 0.15, 2)
-print(f"# values for share of marginal traders: {len(range_share_mt)}")
-range_cost_info = range(100, 500, 300)
-print(f"# values for cost of information: {len(range_cost_info)}")
-iterations = 2
+# n_days = 90
+# n_agents = 500
+# range_share_mt = np.linspace(0.05, 0.25, 1)
+# print(f"# values for share of marginal traders: {len(range_share_mt)}")
+# range_cost_info = [1]
+# print(f"# values for cost of information: {len(range_cost_info)}")
+# iterations = 1
 
 # quick
-# n_days = 100
-# n_agents = 500
-# range_share_mt = np.linspace(0.05, 0.35, 3)
-# print(f"# values for share of marginal traders: {len(range_share_mt)}")
-# range_cost_info = range(100, 501, 200)
-# print(f"# values for cost of information: {len(range_cost_info)}")
-# iterations = 2
+n_days = 100
+n_agents = 500
+range_share_mt = np.linspace(0.05, 0.25, 5)
+print(f"# values for share of marginal traders: {len(range_share_mt)}")
+range_cost_info = [1, 5, 10, 25, 50]
+print(f"# values for cost of information: {len(range_cost_info)}")
+iterations = 4
 
 
 
 # prod
 # n_days = 200
 # n_agents = 500
-# range_share_mt = np.linspace(0.05, 0.5, 10)
+# range_share_mt = np.linspace(0.05, 0.5, 5)
 # print(f"# values for share of marginal traders: {len(range_share_mt)}")
-# range_cost_info = range(250, 2501, 250)
+# range_cost_info = range(100, 501, 200)
 # print(f"# values for cost of information: {len(range_cost_info)}")
-# iterations = 5
+# iterations = 3
 
 
 
-starting_phase = 10
+starting_phase = 1
 params = {
     "num_agents": n_agents, #500, # range(250, 1001, 250),
     "n_days": n_days, #200, # 50, # 200,
@@ -84,7 +84,7 @@ results = mesa.batch_run(
 )
 
 results_df = pd.DataFrame(results)
-save_df_to_excel(results_df, runtime, "results")
+# save_df_to_excel(results_df, runtime, "results")
 
 
 
@@ -95,6 +95,7 @@ save_df_to_excel(results_df, runtime, "results")
 # https://numpy.org/devdocs/reference/generated/numpy.zeros.html
 # (rows, cols)
 sensitivity_m_corr = np.zeros((len(range_cost_info), len(range_share_mt)))
+sensitivity_m_corr2 = np.zeros((len(range_cost_info), len(range_share_mt)))
 sensitivity_m_mse = np.zeros((len(range_cost_info), len(range_share_mt)))
 sensitivity_m_pnl_mt = np.zeros((len(range_cost_info), len(range_share_mt)))
 sensitivity_m_pnl_nmt = np.zeros((len(range_cost_info), len(range_share_mt)))
@@ -109,6 +110,7 @@ for i, ic in enumerate(range_cost_info):
         df_filtered_mt =  df_filtered_ic[df_filtered_ic['share_of_marginal_traders'] == mt]
 
         corr_arr = []
+        corr2_arr = []
         mse_arr = []
         vola_arr = []
         avg_pnl_marginal_arr = []
@@ -126,11 +128,17 @@ for i, ic in enumerate(range_cost_info):
             correlation = get_price_correlation(df_filterd_m)
             corr_arr.append(correlation)
 
+            correlation2 = get_price_correlation_with_lag(df_filterd_m, 2)
+            corr2_arr.append(correlation2)
+
             mse = calc_mse(df_filterd_m)
+
             mse_arr.append(mse)
 
             volatility = df_filterd_m['market_price'].std()
             vola_arr.append(volatility)
+            print(df_filterd_m['market_price'].describe())
+            print(df_filterd_m['true_value'].describe())
 
 
             df_filtered_a = df_filtered[get_agent_cols()].drop_duplicates()
@@ -138,16 +146,19 @@ for i, ic in enumerate(range_cost_info):
             df_filtered_a = filter_last_day_data(df_filtered_a)
 
             avg_pnl_marginal = df_filtered_a[is_marginal_trader(df_filtered_a)]['PnL'].mean()
+            print(df_filtered_a[is_marginal_trader(df_filtered_a)]['PnL'].describe())
             avg_pnl_marginal_arr.append(avg_pnl_marginal)
 
             avg_pnl_non_marginal = df_filtered_a[is_non_marginal_trader(df_filtered_a)]['PnL'].mean()
+            print(df_filtered_a[is_non_marginal_trader(df_filtered_a)]['PnL'].describe())
             avg_pnl_non_marginal_arr.append(avg_pnl_non_marginal)
 
-        sensitivity_m_corr[i, j] = round(np.mean(corr_arr), 2)
-        sensitivity_m_mse[i, j] = round(np.mean(mse_arr), 2)
-        sensitivity_m_pnl_vola[i, j] = round(np.mean(vola_arr), 2)
-        sensitivity_m_pnl_mt[i, j] = round(np.mean(avg_pnl_marginal_arr), 2)
-        sensitivity_m_pnl_nmt[i, j] = round(np.mean(avg_pnl_non_marginal_arr), 2)
+        sensitivity_m_corr[i, j] = round(np.mean(corr_arr), 6)
+        sensitivity_m_corr2[i, j] = round(np.mean(corr2_arr), 6)
+        sensitivity_m_mse[i, j] = round(np.mean(mse_arr), 6)
+        sensitivity_m_pnl_vola[i, j] = round(np.mean(vola_arr), 6)
+        sensitivity_m_pnl_mt[i, j] = round(np.mean(avg_pnl_marginal_arr), 6)
+        sensitivity_m_pnl_nmt[i, j] = round(np.mean(avg_pnl_non_marginal_arr), 6)
         
 
 sensitivity_df_corr = pd.DataFrame(
@@ -156,6 +167,13 @@ sensitivity_df_corr = pd.DataFrame(
     columns=[f"mt={v:.0%}" for v in range_share_mt]
 )
 save_df_to_excel(sensitivity_df_corr, runtime, "corr")
+
+sensitivity_df_corr2 = pd.DataFrame(
+    sensitivity_m_corr2,
+    index=[f"ic={v:.0f}" for v in range_cost_info],
+    columns=[f"mt={v:.0%}" for v in range_share_mt]
+)
+save_df_to_excel(sensitivity_df_corr2, runtime, "corr2")
 
 sensitivity_df_mse = pd.DataFrame(
     sensitivity_m_mse,
@@ -169,32 +187,27 @@ sensitivity_df_pnl_mt = pd.DataFrame(
     index=[f"ic={v:.0f}" for v in range_cost_info],
     columns=[f"mt={v:.0%}" for v in range_share_mt]
 )
-save_df_to_excel(sensitivity_df_pnl_mt, runtime, "pnl")
+save_df_to_excel(sensitivity_df_pnl_mt, runtime, "pnl_mt")
 
 sensitivity_df_pnl_vola = pd.DataFrame(
     sensitivity_m_pnl_vola,
     index=[f"ic={v:.0f}" for v in range_cost_info],
     columns=[f"mt={v:.0%}" for v in range_share_mt]
 )
-save_df_to_excel(sensitivity_df_pnl_vola, runtime, "pnl")
+save_df_to_excel(sensitivity_df_pnl_vola, runtime, "vola")
 
 sensitivity_df_pnl_nmt = pd.DataFrame(
     sensitivity_m_pnl_nmt,
     index=[f"ic={v:.0f}" for v in range_cost_info],
     columns=[f"mt={v:.0%}" for v in range_share_mt]
 )
-save_df_to_excel(sensitivity_df_pnl_nmt, runtime, "pnl")
+save_df_to_excel(sensitivity_df_pnl_nmt, runtime, "pnl_nmt")
 
 
 
 
 
 for (run_id, iteration), group_data in results_df.groupby(["RunId", "iteration"]):
-
-    # sel_columns = ['RunId', 'iteration', 'Step', 'num_agents', 'n_days', 'trading_day', 'market_price', 'info_event',
-    #            'true_value', 'bid_ask_spread', 'volume', 'shares_outstanding', 'share_of_marginal_traders',
-    #            'rel_distance_sell_orders', 'rel_distance_buy_orders', 'cost_of_information', 'is_marginal_trader', 'PnL', 'skill', 'num_bought_information', 'info_budget_constraint']
-    # print(f"Generating visualization for RunId: {run_id}, Iteration: {iteration}")
 
     rows_for_eval = group_data # group_data[sel_columns].drop_duplicates()
     rows_for_eval = rows_for_eval.iloc[starting_phase:].reset_index(drop=True)

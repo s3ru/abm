@@ -4,3 +4,4 @@ scipy
 searborn
 openpyxl
 scikit-learn
+mplfinance

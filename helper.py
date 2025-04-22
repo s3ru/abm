@@ -15,13 +15,13 @@ def getRandomUniform(low, high):
 
 def get_agent_cols():
     agent_cols = ['RunId', 'iteration', 'trading_day', 'AgentID', 'is_marginal_trader',
-                  'PnL', 'wealth', 'cash', 'skill', 'num_of_shares', 'informed',
-                  'num_bought_information', 'info_budget_constraint']
+                  'PnL', 'wealth', 'cash', 'cash_chg_liquidity_events', 'skill', 'num_of_shares', 'informed',
+                  'num_bought_information', 'info_budget_constraint', 'stocks_sold', 'stocks_sold_avg_price', 'stocks_bought', 'stocks_bought_avg_price']
     return agent_cols
 
 def get_market_cols():
-    market_cols = ['RunId', 'iteration', 'trading_day', 'market_price', 'true_value', 'bid_ask_spread',
-                   'info_event', 'volume', 'shares_outstanding', 'share_of_marginal_traders',
+    market_cols = ['RunId', 'iteration', 'trading_day', 'trading_date', 'market_price', 'true_value', 'bid_ask_spread', 'open_price', 'high_price', 'low_price', 'close_price',
+                   'info_event', 'volume', 'shares_outstanding', 'share_of_marginal_traders', 
                    'rel_distance_sell_orders', 'rel_distance_buy_orders', 'cost_of_information']
     
     return market_cols
