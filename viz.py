@@ -57,7 +57,7 @@ def create_candlestick_chart(df, runtime):
         df,
         type='candle',
         volume=True,
-        title=f"Candlestick Chart [ MT: {share_mt:.0%}, IC: {ic} ]",
+        title=f"Candlestick Chart [MT: {share_mt:.0%}, IC: {ic}]",
         style='yahoo',
         savefig=dict(fname=file_path, dpi=300, bbox_inches='tight')
     )
@@ -88,7 +88,7 @@ def create_pnl_boxplot(df, runtime):
     )
 
     # Add labels and title
-    plt.title(f'PnL Distribution for Marginal and Non-Marginal Traders [ MT: {share_mt:.0%}, IC: {ic} ]')
+    plt.title(f'PnL Distribution for Marginal and Non-Marginal Traders [MT: {share_mt:.0%}, IC: {ic}]')
     plt.xlabel('Trader Type')
     plt.ylabel('PnL')
     plt.grid(axis='y', alpha=0.3)
@@ -183,7 +183,7 @@ def create_price_chart(df, runtime):
     # Line chart for market_price
     sns.lineplot(data=filtered_df, x='trading_day', y='market_price', label='Market Price', ax=axs[0], color='steelblue', alpha=0.7)
     sns.lineplot(data=filtered_df, x='trading_day', y='true_value', label='True Value', ax=axs[0], color='seagreen', alpha=0.7)
-    axs[0].set_title(f"Prices Over Time [Agents: {agents}, MT: {share_mt:.0%}, IC: {ic}, Corr: {corr:.2f}, MSE: {mse:.1f} ]")
+    axs[0].set_title(f"Prices Over Time [Agents: {agents}, MT: {share_mt:.0%}, IC: {ic}, Corr: {corr:.2f}, MSE: {mse:.1f}]")
     axs[0].set_ylabel('Price')
 
 
@@ -212,12 +212,6 @@ def create_price_chart(df, runtime):
     save_df_to_excel(df, runtime, f"price_data_{run_id}{iteration}")
     # plt.show()
 
-
-def get_price_correlation_with_lag(df, lag):
-    prices = df["market_price"].values
-    true_vals = df["true_value"].values
-    prices = prices.shift(lag)
-    return true_vals.corr(prices)
 
 def get_price_correlation(df):
     prices = df["market_price"].values

@@ -95,7 +95,6 @@ results_df = pd.DataFrame(results)
 # https://numpy.org/devdocs/reference/generated/numpy.zeros.html
 # (rows, cols)
 sensitivity_m_corr = np.zeros((len(range_cost_info), len(range_share_mt)))
-sensitivity_m_corr2 = np.zeros((len(range_cost_info), len(range_share_mt)))
 sensitivity_m_mse = np.zeros((len(range_cost_info), len(range_share_mt)))
 sensitivity_m_pnl_mt = np.zeros((len(range_cost_info), len(range_share_mt)))
 sensitivity_m_pnl_nmt = np.zeros((len(range_cost_info), len(range_share_mt)))
@@ -110,7 +109,6 @@ for i, ic in enumerate(range_cost_info):
         df_filtered_mt =  df_filtered_ic[df_filtered_ic['share_of_marginal_traders'] == mt]
 
         corr_arr = []
-        corr2_arr = []
         mse_arr = []
         vola_arr = []
         avg_pnl_marginal_arr = []
@@ -127,9 +125,6 @@ for i, ic in enumerate(range_cost_info):
 
             correlation = get_price_correlation(df_filterd_m)
             corr_arr.append(correlation)
-
-            correlation2 = get_price_correlation_with_lag(df_filterd_m, 2)
-            corr2_arr.append(correlation2)
 
             mse = calc_mse(df_filterd_m)
 
@@ -167,13 +162,6 @@ sensitivity_df_corr = pd.DataFrame(
     columns=[f"mt={v:.0%}" for v in range_share_mt]
 )
 save_df_to_excel(sensitivity_df_corr, runtime, "corr")
-
-sensitivity_df_corr2 = pd.DataFrame(
-    sensitivity_m_corr2,
-    index=[f"ic={v:.0f}" for v in range_cost_info],
-    columns=[f"mt={v:.0%}" for v in range_share_mt]
-)
-save_df_to_excel(sensitivity_df_corr2, runtime, "corr2")
 
 sensitivity_df_mse = pd.DataFrame(
     sensitivity_m_mse,

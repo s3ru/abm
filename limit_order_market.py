@@ -56,7 +56,7 @@ class LimitOrderMarket(mesa.Model):
         self.n_days: int = n_days
         # self.starting_phase: int = starting_phase
         self.true_value: float = start_true_value
-        self.initial_market_price: float = round(normal(self.true_value, 5))
+        self.initial_market_price: float = round(normal(self.true_value, 1), 2) # initial market price
         # print(f"Initial market price: {self.initial_market_price}")
 
         self.volume = 0
