@@ -6,7 +6,7 @@ from helper import get_agent_cols, get_market_cols
 from limit_order_market import LimitOrderMarket
 import pandas as pd
 import numpy as np
-from viz import calc_mse, create_viz, get_path, get_price_correlation, get_price_correlation_with_lag, save_df_to_excel
+from viz import calc_mse, create_viz, get_path, get_price_correlation, save_df_to_excel
 
 
 # vizualization per run_id and iteration
@@ -149,7 +149,6 @@ for i, ic in enumerate(range_cost_info):
             avg_pnl_non_marginal_arr.append(avg_pnl_non_marginal)
 
         sensitivity_m_corr[i, j] = round(np.mean(corr_arr), 6)
-        sensitivity_m_corr2[i, j] = round(np.mean(corr2_arr), 6)
         sensitivity_m_mse[i, j] = round(np.mean(mse_arr), 6)
         sensitivity_m_pnl_vola[i, j] = round(np.mean(vola_arr), 6)
         sensitivity_m_pnl_mt[i, j] = round(np.mean(avg_pnl_marginal_arr), 6)
