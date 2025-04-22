@@ -31,8 +31,11 @@ def create_viz(df, runtime):
 
 
 def create_candlestick_chart(df, runtime):
+    run_id = df.iloc[0]["RunId"]
+    iteration = df.iloc[0]["iteration"]
     share_mt = df.iloc[0][share_of_marginal_traders_col]
     ic = df.iloc[0][cost_of_information_col]
+
     df = df[['trading_date', 'open_price', 'high_price', 'low_price', 'close_price', 'volume']]
     df = df.drop_duplicates()
 
@@ -48,7 +51,7 @@ def create_candlestick_chart(df, runtime):
     # Ensure the Date column is a datetime object and set it as the index
     # df['Date'] = pd.to_datetime(df['Date'])
     df.set_index('Date', inplace=True)
-    file_path = os.path.join(get_path(runtime), f"candlestick_chart.png")
+    file_path = os.path.join(get_path(runtime), f"candlestick_chart_{run_id}{iteration}.png")
     # Plot the candlestick chart
     mpf.plot(
         df,
