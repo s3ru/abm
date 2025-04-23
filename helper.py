@@ -20,8 +20,8 @@ def get_agent_cols():
     return agent_cols
 
 def get_market_cols():
-    market_cols = ['RunId', 'iteration', 'trading_day', 'trading_date', 'market_price', 'true_value', 'bid_ask_spread', 'open_price', 'high_price', 'low_price', 'close_price',
-                   'info_event', 'volume', 'shares_outstanding', 'share_of_marginal_traders', 
+    market_cols = ['RunId', 'iteration', 'trading_day', 'trading_date', 'vpin', 'lob_imbalance', 'market_price', 'true_value', 'bid_ask_spread', 'open_price', 'high_price', 'low_price', 'close_price',
+                   'info_event', 'volume', 'shares_outstanding', 'share_of_marginal_traders',  'buy_orders', 'sell_orders',
                    'rel_distance_sell_orders', 'rel_distance_buy_orders', 'cost_of_information']
     
     return market_cols

@@ -25,22 +25,22 @@ runtime = current_time = datetime.now().strftime("%Y%m%d_%H%M")
 setup_logger('app_log', os.path.join(get_path(runtime), f"app_{runtime}.log"))
 
 # error
-# n_days = 90
-# n_agents = 500
-# range_share_mt = np.linspace(0.05, 0.25, 1)
-# print(f"# values for share of marginal traders: {len(range_share_mt)}")
-# range_cost_info = [1]
-# print(f"# values for cost of information: {len(range_cost_info)}")
-# iterations = 1
+n_days = 200
+n_agents = 500
+range_share_mt = [0.01, 0.05, 0.1, 0.2, 0.3]
+print(f"# values for share of marginal traders: {len(range_share_mt)}")
+range_cost_info = [1, 2, 5, 10]
+print(f"# values for cost of information: {len(range_cost_info)}")
+iterations = 1
 
 # quick
-n_days = 100
-n_agents = 500
-range_share_mt = np.linspace(0.05, 0.25, 5)
-print(f"# values for share of marginal traders: {len(range_share_mt)}")
-range_cost_info = [1, 5, 10, 25, 50]
-print(f"# values for cost of information: {len(range_cost_info)}")
-iterations = 4
+# n_days = 100
+# n_agents = 500
+# range_share_mt = np.linspace(0.05, 0.25, 5)
+# print(f"# values for share of marginal traders: {len(range_share_mt)}")
+# range_cost_info = [1, 5, 10, 25, 50]
+# print(f"# values for cost of information: {len(range_cost_info)}")
+# iterations = 4
 
 
 
@@ -61,6 +61,7 @@ params = {
     "n_days": n_days, #200, # 50, # 200,
     "share_of_marginal_traders": range_share_mt,
     "cost_of_information": range_cost_info,
+    "risk_free_rate": 0.02,
     # "start_true_value": 100,
     # "decision_threshold": 0.05,
     # "order_expiration": 10,

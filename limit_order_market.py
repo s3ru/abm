@@ -23,13 +23,14 @@ class LimitOrderMarket(mesa.Model):
             share_of_marginal_traders: float = 0.5,
             n_days: int = 100,
             cost_of_information: int = 500,
+            risk_free_rate: float = 0.02,
             start_true_value = 100.0,
             decision_threshold = 0.05,
             order_expiration = 10,
             noise_range = 0.03,
             wealth_min=5000,
-            event_info_frequency = 0.2,
-            event_info_intensity = 0.5,
+            event_info_frequency = 0.1,
+            event_info_intensity = 0.25,
             event_liquidity_frequency = 0.01,
             event_liquidity_intensity = 100,
             # starting_phase = 5,
@@ -38,6 +39,8 @@ class LimitOrderMarket(mesa.Model):
         # wealth
         self.wealth_alpha = 2.0       # shape
         self.wealth_min = wealth_min       # minimum wealth
+
+        self.risk_free_rate = risk_free_rate
 
         self.cost_of_information = cost_of_information
         self.share_of_marginal_traders = share_of_marginal_traders
@@ -65,6 +68,9 @@ class LimitOrderMarket(mesa.Model):
         self.open_price = 0
         self.close_price = 0
 
+        self.vpin = 0
+        self.lob_imbalance = 0
+
         self.start_date = datetime.today()
 
         self.lob: List[LimitOrder] = [] # List of LimitOrder objects
@@ -84,9 +90,12 @@ class LimitOrderMarket(mesa.Model):
                              "open_price": "open_price",
                              "high_price": "high_price",
                              "low_price": "low_price",
+                             "vpin": "vpin",
+                             "buy_orders": lambda m: m.get_number_of_buy_orders(),
+                             "sell_orders": lambda m: m.get_number_of_sell_orders(),
                              "close_price": "close_price",
                              "shares_outstanding": lambda m: m.get_total_shares_outstanding(),
-                             "lob_skew": lambda m: m.get_lob_skew(),
+                             "lob_imbalance": "lob_imbalance",
                              "cost_of_information": "cost_of_information",
                              "share_of_marginal_traders": "share_of_marginal_traders",
                              "rel_distance_sell_orders": lambda m: m.get_rel_distance_sell_orders(),
@@ -155,6 +164,8 @@ class LimitOrderMarket(mesa.Model):
         self.agents.shuffle_do("step")
 
         self.set_open_high_low_closing_price_trading_day()
+        self.calc_lob_imbalance()
+        self.calc_vpin()
         self.datacollector.collect(self)
         self.current_day += 1
         # print(f"Step {self.current_day} completed.")
@@ -202,22 +213,26 @@ class LimitOrderMarket(mesa.Model):
         elif len(self.get_sell_orders()) > 0 or len(self.get_buy_orders()) > 0:
             self.last_market_price = (self.get_ask_quote_lob() + self.get_bid_quote_lob()) / 2
         
+        # diff = abs(self.last_market_price - self.true_value)
+        # if diff > 50:
+        #     print(f"Market price is too high: {self.last_market_price}. Setting to 100.")
+
         return self.last_market_price
         
-    def get_lob_skew(self) -> float: 
+    def calc_lob_imbalance(self) -> float: 
         """
         Returns the relative depth of the limit order book (LOB).
         """
+
+        self.lob_imbalance = 0.0
+
         buy_orders = self.get_buy_orders()
         sell_orders = self.get_sell_orders()
-        if len(buy_orders) > 0 or len(sell_orders) > 0:
+        if len(buy_orders) > 0 and len(sell_orders) > 0:
             volume_buy_orders = sum(order.get_quantity_unfilled() for order in buy_orders)
             volume_sell_orders = sum(order.get_quantity_unfilled() for order in sell_orders)
             volume_combined = volume_buy_orders + abs(volume_sell_orders)
-            lob_tilt = (volume_buy_orders + volume_sell_orders) / volume_combined
-            return lob_tilt
-        else:
-            return 0.0
+            self.lob_imbalance = (volume_buy_orders + volume_sell_orders) / volume_combined
 
     def get_rel_distance_sell_orders(self):
         """
@@ -231,6 +246,36 @@ class LimitOrderMarket(mesa.Model):
             return rel_distance
         else:
             return 0.0
+        
+    def get_number_of_buy_orders(self) -> int:
+        """
+        Returns the number of buy orders in the limit order book (LOB).
+        """
+        buy_orders = self.get_buy_orders()
+        return len(buy_orders)
+    
+    def get_number_of_sell_orders(self) -> int:
+        """
+        Returns the number of sell orders in the limit order book (LOB).
+        """
+        sell_orders = self.get_sell_orders()
+        return len(sell_orders) 
+
+    def calc_vpin(self):
+        """
+        Volume-Synchronized Probability of Informed Trading (VPIN)
+        """
+
+        self.vpin = 0.0
+
+        transaktions_last_day = [transaction for transaction in self.transactions if transaction.trading_day == self.current_day-1]
+        if len(transaktions_last_day) > 0:
+            volume_buy_initiated = sum(transaction.volume for transaction in transaktions_last_day if transaction.get_initiator() == "buy")
+            volume_sell_initiated = sum(transaction.volume for transaction in transaktions_last_day if transaction.get_initiator() == "sell")
+
+            volume_combined = volume_buy_initiated + volume_sell_initiated
+
+            self.vpin = abs(volume_buy_initiated - volume_sell_initiated) / volume_combined
         
     def get_rel_distance_buy_orders(self):
         """
@@ -376,12 +421,12 @@ class LimitOrderMarket(mesa.Model):
             # print(f"Best bid in LOB: {best_bid}")
             return best_bid.limit_price
         else:
-            # nobody wants to buy decreasing price
-            if self.get_lob_skew() < -0.5:
-                # print(f"Nobody wants to buy, decreasing price")
-                return self.last_market_price * (1 - 0.01) 
-            else:
-                return self.last_market_price
+            # # nobody wants to buy decreasing price
+            # if self.lob_imbalance != 0 and self.lob_imbalance < -0.5:
+            #     # print(f"Nobody wants to buy, decreasing price")
+            #     return self.last_market_price * (1 - 0.01) 
+            # else:
+            return self.last_market_price
         
     
     
@@ -399,11 +444,11 @@ class LimitOrderMarket(mesa.Model):
             return best_ask.limit_price
         else:
             # nobody wants to sell increasing price
-            if self.get_lob_skew() > 0.5:
-                # print(f"Nobody wants to sell, increasing price")
-                return self.last_market_price * (1 + 0.01)
-            else:
-                return self.last_market_price
+            # if self.lob_imbalance != 0 and self.lob_imbalance > 0.5:
+            #     # print(f"Nobody wants to sell, increasing price")
+            #     return self.last_market_price * (1 + 0.01)
+            # else:
+            return self.last_market_price
         
 
     def get_bid_ask_spread(self) -> float:
@@ -418,9 +463,9 @@ class LimitOrderMarket(mesa.Model):
 
     def markov_price_step(self):
         mu = 100
-        phi = 0.8
-        sigma = 1
-        old_price = self.true_value
+        phi = 0.9
+        sigma = 0.7
+        # old_price = self.true_value
         self.true_value = max(1, round(mu + phi * (self.true_value - mu) + np.random.normal(0, sigma), 2))
         # print(f"Markov price step: old_price={old_price}, new_price={self.true_value}, diff={(self.true_value - old_price)/old_price:.4%}")
 

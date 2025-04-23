@@ -13,8 +13,8 @@ class Trader(mesa.Agent):
     def __init__(self, model):
         super().__init__(model)
         self.pnl = 0.0
-        self.init_wealth = round(self.model.wealth_min * (1 + np.random.pareto(self.model.wealth_alpha)))
         self.is_marginal_trader = True if random.random() <= self.model.share_of_marginal_traders else False
+        self.init_wealth = round(self.model.wealth_min * (2 if self.is_marginal_trader else 1) * (1 + np.random.pareto(self.model.wealth_alpha)))
        
         # risk aversion
         self.risk_aversion = round(normal(0.5, 0.1), 2)
@@ -38,7 +38,7 @@ class Trader(mesa.Agent):
         self.skill = max(0.01, min(1, round(normal(0.8 if self.is_marginal_trader else 0.5, 0.05), 2)))
 
         # valuation bias
-        self.valuation_bias = round(normal(0.02, 0.02 if self.is_marginal_trader else 0.04), 4)
+        self.valuation_bias = round(normal(0.02, 0.01 if self.is_marginal_trader else 0.04), 4)
 
         # overconfidence
         self.overconfidence = round(normal(0.4 if self.is_marginal_trader else 0.5, 0.1), 2)
@@ -66,7 +66,7 @@ class Trader(mesa.Agent):
             # liquidation day
             return self.cash + self.num_of_shares * self.model.true_value
         
-        return self.cash + self.num_of_shares * self.model.get_market_price() 
+        return self.cash + self.num_of_shares * self.model.get_market_price()
     
     def get_decision_threshold(self):
         # overconfidence lowers decision treshold
@@ -76,8 +76,24 @@ class Trader(mesa.Agent):
         # print(f"Trader {self.unique_id} starting step...")
         self.estimate_true_value()
         self.decide_to_trade()
+        # self.receive_risk_free_rate()
         self.calculate_pnl()
+
         # print(f"Trader {self.unique_id} completed step.")
+
+    def receive_risk_free_rate(self):
+        """
+        Updates the cash of the trader based on the risk-free rate.
+        """
+        if self.model.current_day % 30 == 0:
+            interest = self.cash * (self.model.risk_free_rate / 30)
+            self.cash += interest
+
+            # Update the cash change due to liquidity events
+            self.cash_chg_liquidity_events += interest
+
+        # Calculate the interest earned on the cash balance
+        
 
     def estimate_true_value(self):
         
@@ -87,42 +103,51 @@ class Trader(mesa.Agent):
 
         new_estimation = self.estimated_true_value
         noise_abs = self.model.get_market_price() * self.model.noise_range
-        if(self.skill <= 0.75):
             # basic noise for not highly skilled traders
-            new_estimation = round(max(0.01, self.estimated_true_value + getRandomUniform(-noise_abs, noise_abs)), 2)
-        
-        if(self.skill > 0.4):
-            # more skilled traders take the market price into account by following order book
-            skew = self.model.get_lob_skew() 
-            if skew != 0:
-                # if more people are on the buy side, the skew is positive
-                # if more people are on the sell side, the skew is negative
-                # agent follows the skew of the order book -> trend following
-                skew_abs = skew / 10 * self.model.get_market_price()     
-                new_estimation = round(new_estimation + skew_abs * getRandomUniform(0.5, 1), 2)
-                # new_estimation = round(new_estimation + skew_abs, 2)
-        
-        if(self.skill > 0.6):
-            sellers_rel_distance = self.model.get_rel_distance_sell_orders()
-            if (sellers_rel_distance != 0):
-                if (sellers_rel_distance > 0.4): # based on model avg
-                    # median is rel far away from ask price -> no selling pressure -> pos. signal
-                    new_estimation = round(new_estimation + getRandomUniform(0.5, noise_abs), 2)
-                else:
-                    # median is rel close to ask price -> selling pressure -> neg. signal
-                    new_estimation = round(new_estimation - getRandomUniform(0.5, noise_abs), 2)
 
-            buyers_rel_distance = self.model.get_rel_distance_buy_orders()
-            if (buyers_rel_distance != 0):
-                if(buyers_rel_distance > 0.25): # based on model avg 
-                    # median is rel far away from bid price -> no buying pressure -> neg. signal
-                    new_estimation = round(new_estimation - getRandomUniform(0.5, noise_abs), 2)
-                else:
-                    # median is rel close to bid price -> buying pressure -> pos. signal
-                    new_estimation = round(new_estimation + getRandomUniform(0.5, noise_abs), 2)
+        
+        # noise trader
+        chg = getRandomUniform(-noise_abs, noise_abs) * (1-self.skill)
+        new_estimation = round(max(0.01, self.estimated_true_value + chg, 2))
+        # logger.info(f"Trader {self.unique_id} is adjusting estimation based on noise... {round(chg, 2)}, too {new_estimation}")
+        
+        if(self.skill > 0.4 and self.skill <= 0.5):
+            # look at lob imbalance
+            imbalance = self.model.lob_imbalance
+            if imbalance != 0:
+                # if more people are on the buy side, the imbalance is positive
+                # if more people are on the sell side, the imbalance is negative
+                # agent follows the imbalance of the order book -> trend following
+                imbalance_abs = imbalance / 10 * self.model.get_market_price()  
+                if abs(imbalance) > 0.4 and self.overconfidence > 0.6:
+                    # contrarian
+                    imbalance = imbalance * -1
+
+                chg = imbalance_abs * getRandomUniform(0.5, 1)
+                new_estimation = round(new_estimation + chg, 2)
+                # logger.info(f"Trader {self.unique_id} is adjusting estimation based on lob imbalance... {round(chg, 2)}, too {new_estimation}")
+        
+        if(self.skill > 0.5):
+            # look at lob imbalance and vpin
+            vpin = self.model.vpin
+            imbalance = self.model.lob_imbalance
+
+            if vpin > 0.6 and imbalance != 0:
+                # informed trade is likely to be present
+                if imbalance > 0.10:
+                    # if the imbalance is positive, the trader is more likely to buy
+                    new_estimation = round(new_estimation + getRandomUniform(0.5, 2), 2)
+                    logger.info(f"Trader {self.unique_id} is adjusting estimation (+) based on vpin and imbalance...")
+                elif imbalance < -0.10:
+                    # if the imbalance is negative, the trader is more likely to sell
+                    new_estimation = round(new_estimation - getRandomUniform(0.5, 2), 2)
+                    logger.info(f"Trader {self.unique_id} is adjusting estimation (-) based on vpin and imbalance...")
             
 
         self.estimated_true_value = round(new_estimation, 2)
+
+        if self.estimated_true_value > 150 or self.estimated_true_value < 50:
+            logger.warning(f"Trader {self.unique_id} estimated true value: {self.estimated_true_value}")
 
         # print(f"Trader {self.unique_id} estimated true value: {self.estimated_true_value}")
 
@@ -175,25 +200,32 @@ class Trader(mesa.Agent):
         current_wealth = self.num_of_shares * calculation_price + self.cash
         current_wealth_adj = current_wealth - self.cash_chg_liquidity_events
         self.pnl = round((current_wealth_adj - initial_wealth) / initial_wealth, 6)
-        if is_liqudation_day:
-            logger.info(f"Trader {self.unique_id} PnL: {self.pnl:.4%} (liquidation day)")
+        # if is_liqudation_day:
+        #     logger.info(f"Trader {self.unique_id} PnL: {self.pnl:.4%} (liquidation day)")
 
 
       # PnL as a percentage of initial wealth
         # print(f"Trader {self.unique_id} PnL: {self.pnl:.2%}")
-     
 
     def get_portfolio_share_stocks(self):
         """
         Returns the portfolio share of stocks.
         """
-        return (self.num_of_shares * self.model.get_market_price()) / self.get_total_wealth()
+        wealth = self.get_total_wealth()
+        if wealth == 0:
+            logger.warning(f"Trader {self.unique_id} has zero wealth?")
+            return self.risk_appetit
+        return (self.num_of_shares * self.model.get_market_price()) / wealth
     
     def get_portfolio_share_stocks_with_open_orders(self):
 
-        return ((self.num_of_shares + self.volume_active_orders()) * self.model.get_market_price()) / self.get_total_wealth()
+        wealth = self.get_total_wealth()
+        if wealth == 0:
+            logger.warning(f"Trader {self.unique_id} has zero wealth?")
+            return self.risk_appetit
 
-    
+        return ((self.num_of_shares + self.volume_active_orders()) * self.model.get_market_price()) / wealth
+
     def has_active_orders(self):
         """
         Returns True if the trader has active orders, False otherwise.
@@ -330,7 +362,7 @@ class Trader(mesa.Agent):
         Returns the limit price for the order.
         """
         # Example logic for determining the limit price
-        safety_margin = self.estimated_true_value * max(0, normal(0.02, 0.01))
+        safety_margin = self.estimated_true_value * 0.02
         if order_type == "buy":
             return round(self.estimated_true_value - self.risk_aversion * safety_margin, 2)
         else:

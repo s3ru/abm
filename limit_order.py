@@ -29,7 +29,6 @@ class LimitOrder:
         self.quantity = quantity
         self.trading_day = trading_day
         self.timestamp = datetime.now()
-        self.direct_execution = False
         self.transactions = [] 
         self.is_canceled = False
 
@@ -84,6 +83,12 @@ class Transaction:
         self.buyer_order = buyer_order
         self.seller_order = seller_order
         self.trading_day = trading_day
+
+    def get_initiator(self):
+        if self.buyer_order.timestamp > self.seller_order.timestamp:
+            return "buy"
+        else:
+            return "sell"
 
     def __repr__(self) -> str:
         return (f"Transaction(price={self.price}, volume={self.volume}, "

@@ -27,7 +27,7 @@ def create_viz(df, runtime):
     create_price_chart(df, runtime)
     create_skill_histogram(df, runtime)
     create_pnl_boxplot(df, runtime)
-    create_candlestick_chart(df, runtime)
+    # create_candlestick_chart(df, runtime)
 
 
 def create_candlestick_chart(df, runtime):
@@ -210,7 +210,10 @@ def create_price_chart(df, runtime):
     # save results to filesystem
     save_plt_as_img(plt, runtime, f"price_chart_{run_id}{iteration}")
     save_df_to_excel(df, runtime, f"price_data_{run_id}{iteration}")
-    # plt.show()
+
+    # if run_id == 0 and iteration == 0:
+        # Show the plot only for the first run and iteration
+        # plt.show()
 
 
 def get_price_correlation(df):
