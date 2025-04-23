@@ -114,7 +114,7 @@ class Trader(mesa.Agent):
         if(self.skill > 0.4 and self.skill <= 0.5):
             # look at lob imbalance
             imbalance = self.model.lob_imbalance
-            if imbalance != 0:
+            if imbalance != 0 and abs(imbalance) > 0.1:
                 # if more people are on the buy side, the imbalance is positive
                 # if more people are on the sell side, the imbalance is negative
                 # agent follows the imbalance of the order book -> trend following
@@ -129,7 +129,7 @@ class Trader(mesa.Agent):
         
         if(self.skill > 0.5):
             # look at lob imbalance and vpin
-            vpin = self.model.vpin
+            vpin = self.model.calc_vpin()
             imbalance = self.model.lob_imbalance
 
             if vpin > 0.6 and imbalance != 0:
@@ -153,8 +153,8 @@ class Trader(mesa.Agent):
 
 
     def buy_information(self):
-        
         if not self.is_marginal_trader:
+            # only marginal traders buy information
             return
         
         if random.random() > self.overconfidence:
@@ -164,19 +164,15 @@ class Trader(mesa.Agent):
         
         ic = self.model.cost_of_information
         if self.cash < ic or ic > 0.05 * self.get_total_wealth():
+            # if the cost of information is too high, the agent won't buy it
             self.info_budget_constraint = True
-            # if the cost of information is too high, don't buy it
             return
         else:
             self.info_budget_constraint = False
 
-        # mp = self.model.get_market_price()
-        # if abs(self.estimated_true_value - mp) / mp < 0.05:
-        #     # if the estimated true value is close to the market price, don't buy it
-        #     return
-        
+              
         if self.last_bought_information is not None and (self.model.current_day - self.last_bought_information) < 5:
-            # if the trader has already bought information, don't buy it again
+            # if the trader has already recently bought information, don't buy again
             # simulates coordination problem across informed traders
             self.informed = True
             return
@@ -186,7 +182,6 @@ class Trader(mesa.Agent):
         self.last_bought_information = self.model.current_day
         self.cash -= ic
         self.estimated_true_value = round(self.model.true_value * (1 + self.valuation_bias), 2)
-
 
     def calculate_pnl(self):
         """

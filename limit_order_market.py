@@ -268,7 +268,7 @@ class LimitOrderMarket(mesa.Model):
 
         self.vpin = 0.0
 
-        transaktions_last_day = [transaction for transaction in self.transactions if transaction.trading_day == self.current_day-1]
+        transaktions_last_day = [transaction for transaction in self.transactions if transaction.trading_day == self.current_day-1 or transaction.trading_day == self.current_day]
         if len(transaktions_last_day) > 0:
             volume_buy_initiated = sum(transaction.volume for transaction in transaktions_last_day if transaction.get_initiator() == "buy")
             volume_sell_initiated = sum(transaction.volume for transaction in transaktions_last_day if transaction.get_initiator() == "sell")
@@ -276,6 +276,8 @@ class LimitOrderMarket(mesa.Model):
             volume_combined = volume_buy_initiated + volume_sell_initiated
 
             self.vpin = abs(volume_buy_initiated - volume_sell_initiated) / volume_combined
+        
+        return self.vpin
         
     def get_rel_distance_buy_orders(self):
         """

@@ -27,11 +27,11 @@ setup_logger('app_log', os.path.join(get_path(runtime), f"app_{runtime}.log"))
 # error
 n_days = 200
 n_agents = 500
-range_share_mt = [0.01, 0.05, 0.1, 0.2, 0.3]
+range_share_mt = [0.01, 0.05, 0.1, 0.25]
 print(f"# values for share of marginal traders: {len(range_share_mt)}")
 range_cost_info = [1, 2, 5, 10]
 print(f"# values for cost of information: {len(range_cost_info)}")
-iterations = 1
+iterations = 3
 
 # quick
 # n_days = 100
