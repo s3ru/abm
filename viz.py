@@ -27,6 +27,7 @@ def create_viz(df, runtime):
     create_price_chart(df, runtime)
     create_skill_histogram(df, runtime)
     create_pnl_boxplot(df, runtime)
+    create_vpip_chart(df, runtime)
     # create_candlestick_chart(df, runtime)
 
 
@@ -173,7 +174,7 @@ def create_price_chart(df, runtime):
     mse = calc_mse(df)
     corr = get_price_correlation(df)
 
-    selected_columns = ['trading_day', 'market_price', 'true_value', 'volume']
+    selected_columns = ['trading_day', 'market_price', 'true_value', 'volume', 'volume_mt_involment']
     filtered_df = df[selected_columns]
 
     # Create the figure and axes
@@ -201,7 +202,16 @@ def create_price_chart(df, runtime):
 
     # Histogram for volume
     
-    sns.histplot(data=filtered_df, x='trading_day', weights='volume', bins=round(n_days_value/2), ax=axs[1], kde=False, color='grey', alpha=0.5)
+    sns.histplot(data=filtered_df, x='trading_day', weights='volume', bins=round(n_days_value/2), ax=axs[1], kde=False, color='grey', alpha=0.5, label='Total Volume')
+
+    # Add a secondary Y-axis for the percentage of volume_mt_involvement relative to total volume
+    ax2 = axs[1].twinx()
+    filtered_df['pct_mt_involvement'] = (filtered_df['volume_mt_involment'] / filtered_df['volume']) * 100
+    sns.lineplot(data=filtered_df, x='trading_day', y='pct_mt_involvement', ax=ax2, color='red', label='% MT Involvement', alpha=0.7, linestyle='--')
+    ax2.set_ylabel('% MT Involvement')
+    ax2.legend(loc='upper right')
+    sns.histplot(data=filtered_df, x='trading_day', weights='volume_mt_involment', bins=round(n_days_value/2), ax=axs[1], kde=False, color='red', alpha=0.7, label='MT Involvement Volume')
+    axs[1].legend(title="Volume Type")
     axs[1].set_title('Volume Over Time')
     axs[1].set_ylabel('Volume')
     axs[1].set_xlabel('Trading Day')
@@ -214,6 +224,31 @@ def create_price_chart(df, runtime):
     # if run_id == 0 and iteration == 0:
         # Show the plot only for the first run and iteration
         # plt.show()
+
+def create_vpip_chart(df, runtime):
+    # Extract relevant columns
+    selected_columns = ['trading_day', 'vpin']
+    filtered_df = df[selected_columns].drop_duplicates()
+
+    # Model parameters
+    run_id = df.iloc[0][run_id_col]
+    iteration = df.iloc[0]["iteration"]
+    share_mt = df.iloc[0][share_of_marginal_traders_col]
+    ic = df.iloc[0][cost_of_information_col]
+
+    # Create the line chart
+    plt.figure(figsize=(10, 6))
+    sns.lineplot(data=filtered_df, x='trading_day', y='vpin', color='purple', label='VPIN', alpha=0.7)
+
+    # Add labels and title
+    plt.title(f'VPIN Over Time [MT: {share_mt:.0%}, IC: {ic}]')
+    plt.xlabel('Trading Day')
+    plt.ylabel('VPIN')
+    plt.grid(axis='y', alpha=0.3)
+    plt.legend()
+
+    # Save the plot
+    save_plt_as_img(plt, runtime, f"vpin_chart_{run_id}{iteration}")
 
 
 def get_price_correlation(df):

@@ -7,6 +7,8 @@ from limit_order_market import LimitOrderMarket
 import pandas as pd
 import numpy as np
 from viz import calc_mse, create_viz, get_path, get_price_correlation, save_df_to_excel
+import logging
+import sys
 
 
 # vizualization per run_id and iteration
@@ -24,14 +26,35 @@ def filter_last_day_data(data):
 runtime = current_time = datetime.now().strftime("%Y%m%d_%H%M")
 setup_logger('app_log', os.path.join(get_path(runtime), f"app_{runtime}.log"))
 
+
+# Configure logging to capture printed output
+class PrintLogger:
+    def __init__(self, logger):
+        self.logger = logger
+
+    def write(self, message):
+        if message.strip():  # Avoid logging empty lines
+            self.logger.info(message.strip())
+
+    def flush(self):
+        pass  # Required for compatibility with sys.stdout
+
+# Redirect print statements to logger
+print_logger = logging.getLogger("batch_log")
+sys.stdout = PrintLogger(print_logger)
+
+
 # error
 n_days = 200
 n_agents = 500
-range_share_mt = [0.01, 0.05, 0.1, 0.25]
+range_share_mt = [0.00, 0.01, 0.025, 0.05, 0.1, 0.125, 0.15, 0.175, 0.2, 0.25] # [0.01, 0.05, 0.1, 0.25]
+#range_share_mt = [0.1] # [0.01, 0.05, 0.1, 0.25]
 print(f"# values for share of marginal traders: {len(range_share_mt)}")
-range_cost_info = [1, 2, 5, 10]
+range_cost_info = [1, 5, 10]#, 5, 10]
+# range_cost_info = [1]#, 5, 10]
 print(f"# values for cost of information: {len(range_cost_info)}")
 iterations = 3
+print(f"# iterations: {iterations}")
 
 # quick
 # n_days = 100
@@ -222,6 +245,17 @@ for (run_id, iteration), group_data in results_df.groupby(["RunId", "iteration"]
     volatility_tv = df_market['true_value'].std()
     print(f"Volatility of True Value: {volatility_tv:.2f}")
 
+
+    df_market['pct_mt_involvement'] = (df_market['volume_mt_involment'] / df_market['volume']) * 100
+    df_market['pct_diff_true_market'] = ((df_market['true_value'] - df_market['market_price']) / df_market['true_value']) * 100
+
+    # Calculate and print correlation between pct_mt_involvement and pct_diff_true_market
+    correlation_mt_diff = df_market['pct_mt_involvement'].corr(df_market['pct_diff_true_market'])
+    print(f"Correlation between pct_mt_involvement and pct_diff_true_market: {correlation_mt_diff:.2f}")
+
+    # Calculate and print average mt_involvement
+    avg_mt_involvement = df_market['pct_mt_involvement'].mean()
+    print(f"Average MT Involvement: {avg_mt_involvement:.2f}%")
 
     # Filter for the last trading day
     df_agents = rows_for_eval[get_agent_cols()].drop_duplicates()

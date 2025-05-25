@@ -12,19 +12,13 @@ class OrderStatus(Enum):
 
 
 class LimitOrder:
-    def __init__(self, trader_id: int, price: float, quantity: int, trading_day: int):
+    def __init__(self, trader_id: int, price: float, quantity: int, trading_day: int, is_trader_mt: bool = False):
         """
         Initialize a limit order.
-
-        :param order_id: Unique identifier for the order.
-        :param trader_id: ID of the trader placing the order.
-        :param order_type: Type of the order ('buy' or 'sell').
-        :param price: Price at which the order is placed.
-        :param quantity: Quantity of the asset to buy or sell.
-        :param timestamp: Time when the order was placed.
         """
         self.order_id = uuid.uuid4()
         self.trader_id = trader_id
+        self.is_trader_mt = is_trader_mt
         self.limit_price = price
         self.quantity = quantity
         self.trading_day = trading_day
@@ -60,29 +54,23 @@ class LimitOrder:
             return OrderStatus.CANCELED
         elif self.get_quantity_unfilled() == 0:
             return OrderStatus.FILLED
-        elif self.get_quantity_unfilled() < self.quantity:
+        elif abs(self.get_quantity_unfilled()) > 0:
             return OrderStatus.PARTIALLY_FILLED
         else:
             return OrderStatus.OPEN
         
     
-
 class Transaction:
     def __init__(self, price: float, volume: float, buyer_order: LimitOrder, seller_order: LimitOrder, trading_day: int):
         """
         Represents a transaction in the market.
-
-        :param price: The transaction price.
-        :param volume: The volume of the transaction.
-        :param buyer_id: The ID of the buyer.
-        :param seller_id: The ID of the seller.
-        :param trading_day: The trading_day of the transaction.
         """
         self.price = price
         self.volume = volume
         self.buyer_order = buyer_order
         self.seller_order = seller_order
         self.trading_day = trading_day
+        self.mt_involvement = buyer_order.is_trader_mt or seller_order.is_trader_mt
 
     def get_initiator(self):
         if self.buyer_order.timestamp > self.seller_order.timestamp:

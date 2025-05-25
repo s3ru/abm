@@ -26,7 +26,7 @@ class LimitOrderMarket(mesa.Model):
             risk_free_rate: float = 0.02,
             start_true_value = 100.0,
             decision_threshold = 0.05,
-            order_expiration = 10,
+            order_expiration = 5,
             noise_range = 0.03,
             wealth_min=5000,
             event_info_frequency = 0.1,
@@ -62,6 +62,7 @@ class LimitOrderMarket(mesa.Model):
         self.initial_market_price: float = round(normal(self.true_value, 1), 2) # initial market price
         # print(f"Initial market price: {self.initial_market_price}")
 
+        self.volume_mt_involment = 0
         self.volume = 0
         self.high_price = 0
         self.low_price = 0
@@ -77,6 +78,8 @@ class LimitOrderMarket(mesa.Model):
         self.transactions: List[Transaction] = [] # List of transactions (price, volume)
         self.information_events: List[bool] = []  # List of information events
         self.last_market_price: float = self.initial_market_price
+        self.true_prices: List[float] = []
+        self.true_price_avg: float = 0
         self.info_event_occurred: bool = False
         self.datacollector = DataCollector(
             model_reporters={
@@ -87,6 +90,7 @@ class LimitOrderMarket(mesa.Model):
                              "true_value": lambda m: m.true_value,
                              "bid_ask_spread": lambda m: m.get_bid_ask_spread(),
                              "volume": "volume",
+                             "volume_mt_involment": "volume_mt_involment",
                              "open_price": "open_price",
                              "high_price": "high_price",
                              "low_price": "low_price",
@@ -166,6 +170,8 @@ class LimitOrderMarket(mesa.Model):
         self.set_open_high_low_closing_price_trading_day()
         self.calc_lob_imbalance()
         self.calc_vpin()
+        self.true_prices.append(self.true_value)
+        self.true_price_avg = np.mean(self.true_prices)
         self.datacollector.collect(self)
         self.current_day += 1
         # print(f"Step {self.current_day} completed.")
@@ -193,18 +199,19 @@ class LimitOrderMarket(mesa.Model):
                 self.low_price = min(prices)
                 self.close_price = prices[-1]
                 self.volume = self.get_volume_current_trading_day()
+                self.volume_mt_involment = sum(transaction.volume for transaction in self.transactions if transaction.mt_involvement and transaction.trading_day == self.current_day)
             else:
                 self.high_price = self.open_price
                 self.low_price = self.open_price
                 self.close_price = self.open_price
                 self.volume = 0
+                self.volume_mt_involment = 0
         else:
             self.high_price = self.open_price
             self.low_price = self.open_price
             self.close_price = self.open_price
             self.volume = 0
-        
-
+            self.volume_mt_involment = 0
 
     def get_market_price(self) -> float:
         if len(self.transactions) > 0:
@@ -233,6 +240,8 @@ class LimitOrderMarket(mesa.Model):
             volume_sell_orders = sum(order.get_quantity_unfilled() for order in sell_orders)
             volume_combined = volume_buy_orders + abs(volume_sell_orders)
             self.lob_imbalance = (volume_buy_orders + volume_sell_orders) / volume_combined
+
+        return self.lob_imbalance
 
     def get_rel_distance_sell_orders(self):
         """
@@ -268,10 +277,10 @@ class LimitOrderMarket(mesa.Model):
 
         self.vpin = 0.0
 
-        transaktions_last_day = [transaction for transaction in self.transactions if transaction.trading_day == self.current_day-1 or transaction.trading_day == self.current_day]
-        if len(transaktions_last_day) > 0:
-            volume_buy_initiated = sum(transaction.volume for transaction in transaktions_last_day if transaction.get_initiator() == "buy")
-            volume_sell_initiated = sum(transaction.volume for transaction in transaktions_last_day if transaction.get_initiator() == "sell")
+        transaktions = [transaction for transaction in self.transactions if transaction.trading_day == self.current_day-1 or transaction.trading_day == self.current_day]
+        if len(transaktions) > 50:
+            volume_buy_initiated = sum(transaction.volume for transaction in transaktions if transaction.get_initiator() == "buy")
+            volume_sell_initiated = sum(transaction.volume for transaction in transaktions if transaction.get_initiator() == "sell")
 
             volume_combined = volume_buy_initiated + volume_sell_initiated
 
@@ -295,13 +304,14 @@ class LimitOrderMarket(mesa.Model):
     def set_orders_expired(self):
         for order in self.lob:
             if order.get_status() == OrderStatus.OPEN or order.get_status() and (self.current_day - order.trading_day) > self.order_expiration:
-                order.is_canceled = True
+                if random.random() > 0.5:
+                    order.is_canceled = True
                 # print(f"Order {order.order_id} expired and canceled.")
                 self.lob.remove(order)
 
     def process_order(self, order: LimitOrder) -> None:
         """
-        Accepts a limit order and adds it to the limit order book (LOB).
+        Accepts a limit order, (partially) executes it and adds it to the limit order book (LOB).
         """
         if order.get_order_type() == "buy":
             buy_order = order
@@ -312,7 +322,7 @@ class LimitOrderMarket(mesa.Model):
                         break
 
                     if sell_order.limit_price <= buy_order.limit_price:
-                        # Execute transaction
+                        # Execute order as market order
                         transaction = Transaction(
                             price=sell_order.limit_price,
                             volume=min(abs(order.get_quantity_unfilled()), abs(sell_order.get_quantity_unfilled())),
@@ -321,7 +331,6 @@ class LimitOrderMarket(mesa.Model):
                             trading_day=self.current_day
                         )
                         self.transactions.append(transaction)
-                        # print(f"Transaction executed: {transaction}")
                         sell_order.transactions.append(transaction)
                         buy_order.transactions.append(transaction)
 
@@ -337,8 +346,7 @@ class LimitOrderMarket(mesa.Model):
                             self.lob.remove(sell_order)
 
             if abs(buy_order.get_quantity_unfilled()) > 0:
-                # Add the order to the LOB
-                #print(f"Adding buy order to LOB: {buy_order}")
+                # Add the order to the LOB if unfilled quantity left
                 self.lob.append(buy_order)
 
         elif order.get_order_type() == "sell":

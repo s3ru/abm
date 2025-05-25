@@ -64,17 +64,21 @@ class Trader(mesa.Agent):
         """
         if self.model.current_day == self.model.n_days:
             # liquidation day
-            return self.cash + self.num_of_shares * self.model.true_value
+            return self.cash + self.num_of_shares * self.model.true_price_avg
         
         return self.cash + self.num_of_shares * self.model.get_market_price()
     
     def get_decision_threshold(self):
         # overconfidence lowers decision treshold
-        return self.model.decision_threshold - max(0, self.overconfidence - 0.5)
+        return self.model.decision_threshold + ((0.5 - self.overconfidence) / 0.5) / 10
 
     def step(self):
         # print(f"Trader {self.unique_id} starting step...")
-        self.estimate_true_value()
+        if self.is_marginal_trader:
+            self.buy_information()
+        else:
+            self.estimate_true_value()
+
         self.decide_to_trade()
         # self.receive_risk_free_rate()
         self.calculate_pnl()
@@ -96,58 +100,48 @@ class Trader(mesa.Agent):
         
 
     def estimate_true_value(self):
-        
-        self.buy_information()
-        if self.informed:
-            return
 
-        new_estimation = self.estimated_true_value
-        noise_abs = self.model.get_market_price() * self.model.noise_range
+        # non marginal traders try to estimate true value based on available market data
+        if self.estimated_true_value > 150 or self.estimated_true_value < 50:
+            logger.warning(f"Trader {self.unique_id} estimated true value: {self.estimated_true_value}")
+
+        market_price = self.model.get_market_price()
+        new_estimation = market_price * (1 + self.valuation_bias)
+        noise_abs = market_price * self.model.noise_range
             # basic noise for not highly skilled traders
 
-        
         # noise trader
-        chg = getRandomUniform(-noise_abs, noise_abs) * (1-self.skill)
-        new_estimation = round(max(0.01, self.estimated_true_value + chg, 2))
+        chg = getRandomUniform(-noise_abs, noise_abs)
+        new_estimation = round(max(0.01, new_estimation + chg, 2))
         # logger.info(f"Trader {self.unique_id} is adjusting estimation based on noise... {round(chg, 2)}, too {new_estimation}")
         
         if(self.skill > 0.4 and self.skill <= 0.5):
             # look at lob imbalance
-            imbalance = self.model.lob_imbalance
+            imbalance = self.model.calc_lob_imbalance()
             if imbalance != 0 and abs(imbalance) > 0.1:
                 # if more people are on the buy side, the imbalance is positive
                 # if more people are on the sell side, the imbalance is negative
                 # agent follows the imbalance of the order book -> trend following
-                imbalance_abs = imbalance / 10 * self.model.get_market_price()  
-                if abs(imbalance) > 0.4 and self.overconfidence > 0.6:
-                    # contrarian
-                    imbalance = imbalance * -1
-
-                chg = imbalance_abs * getRandomUniform(0.5, 1)
+                chg = imbalance * getRandomUniform(0.5, 1)
                 new_estimation = round(new_estimation + chg, 2)
                 # logger.info(f"Trader {self.unique_id} is adjusting estimation based on lob imbalance... {round(chg, 2)}, too {new_estimation}")
         
         if(self.skill > 0.5):
             # look at lob imbalance and vpin
             vpin = self.model.calc_vpin()
-            imbalance = self.model.lob_imbalance
+            imbalance = self.model.calc_lob_imbalance()
 
-            if vpin > 0.6 and imbalance != 0:
+            if vpin > 0.5 and imbalance != 0:
                 # informed trade is likely to be present
-                if imbalance > 0.10:
+                if abs(imbalance) > 0.10:
                     # if the imbalance is positive, the trader is more likely to buy
-                    new_estimation = round(new_estimation + getRandomUniform(0.5, 2), 2)
-                    logger.info(f"Trader {self.unique_id} is adjusting estimation (+) based on vpin and imbalance...")
-                elif imbalance < -0.10:
-                    # if the imbalance is negative, the trader is more likely to sell
-                    new_estimation = round(new_estimation - getRandomUniform(0.5, 2), 2)
-                    logger.info(f"Trader {self.unique_id} is adjusting estimation (-) based on vpin and imbalance...")
+                    chg = imbalance * getRandomUniform(1, 2)
+                    new_estimation = round(new_estimation + chg, 2)
             
 
         self.estimated_true_value = round(new_estimation, 2)
 
-        if self.estimated_true_value > 150 or self.estimated_true_value < 50:
-            logger.warning(f"Trader {self.unique_id} estimated true value: {self.estimated_true_value}")
+
 
         # print(f"Trader {self.unique_id} estimated true value: {self.estimated_true_value}")
 
@@ -189,7 +183,7 @@ class Trader(mesa.Agent):
         """
 
         is_liqudation_day = self.model.current_day == self.model.n_days
-        calculation_price = self.model.true_value if is_liqudation_day else self.model.get_market_price()
+        calculation_price = self.model.true_price_avg if is_liqudation_day else self.model.get_market_price()
 
         initial_wealth = self.initial_num_shares * calculation_price + self.initial_cash
         current_wealth = self.num_of_shares * calculation_price + self.cash
@@ -235,37 +229,28 @@ class Trader(mesa.Agent):
 
     def decide_to_trade(self):
 
-        if random.random() > self.overconfidence:
+        if not self.informed and random.random() > self.overconfidence:
+            # if informed do trade
             return
         
-        # if self.is_marginal_trader and self.informed:
-            # print(f"Trader {self.unique_id} is informed and marginal trader, no decision to trade.")
-
         decision = 0
 
         # decide to trade if portfolio allocation is not in line with risk appetite
         portfolio_share_stocks = self.get_portfolio_share_stocks_with_open_orders()
         diff_portfolio_alloc = self.risk_appetit - portfolio_share_stocks
-        # rel_diff_portfolio_alloc = diff_portfolio_alloc / self.risk_appetit
-        # print(f"Trader {self.unique_id} portfolio share stocks: {portfolio_share_stocks:.2%}, diff wrt risk appetite: {diff_relative:.2%}")
 
-        # print(f"Trader {self.unique_id} is considering selling shares based on portfolio allocation...")
         if abs(diff_portfolio_alloc) > 0.1 and not self.is_marginal_trader:
             # if the difference is greater than 10%, the trader decides to trade
             decision += diff_portfolio_alloc
-        # elif abs(diff_portfolio_alloc) > 0.3 and self.is_marginal_trader:
-        #     # noise trader risk
-        #     logger.info(f"{self.unique_id}: MT has to trade based on portfolio allocation... noise trader risk")
-        #     decision += diff_portfolio_alloc
-            
+        
 
         # decide to trade if own price estimation is significantly different from market price
         rel_deviation_price_estimation = (self.estimated_true_value - self.model.get_market_price()) / self.model.get_market_price()
-        # print(f"Trader {self.unique_id} relative deviation price estimation: {rel_deviation_price_estimation:.2%}")
         decision += rel_deviation_price_estimation
             
-    
-        if abs(decision) > self.get_decision_threshold():
+        threshold = self.get_decision_threshold()
+        if abs(decision) > threshold:
+            # apply threshold to avoid excessive trading
             direction = "buy" if decision > 0 else "sell"
             order_size = self.get_order_size(direction)
             if abs(order_size) > 0:
@@ -274,7 +259,8 @@ class Trader(mesa.Agent):
                     trader_id=self.unique_id,
                     price=self.get_limit_price(direction),
                     quantity=order_size,
-                    trading_day=self.model.current_day
+                    trading_day=self.model.current_day,
+                    is_trader_mt=self.is_marginal_trader
                 )
                 self.orders.append(order)
                 self.model.process_order(order)
@@ -287,7 +273,7 @@ class Trader(mesa.Agent):
         """
         Returns the volume of stocks sold.
         """
-        return sum(order.quantity + order.get_quantity_unfilled() for order in self.orders if order.get_order_type() == "sell" and (order.get_status() == OrderStatus.FILLED or order.get_status() == OrderStatus.PARTIALLY_FILLED))
+        return sum(abs(order.quantity) - abs(order.get_quantity_unfilled()) for order in self.orders if order.get_order_type() == "sell" and (order.get_status() == OrderStatus.FILLED or order.get_status() == OrderStatus.PARTIALLY_FILLED))
 
 
     def get_avg_price_sold_volume(self):
@@ -320,48 +306,44 @@ class Trader(mesa.Agent):
 
     def get_order_size(self, direction):
               
-
-        # Ensure the order size is within the available cash
-        if direction == "buy":
-            num_of_stocks = round(self.cash / self.model.get_market_price())
+        price = 0
+        if direction == 'buy':
+            price = self.model.get_ask_quote_lob()
         else:
-            num_of_stocks = round(self.num_of_shares)
+            price = self.model.get_bid_quote_lob()
+
+        max_risk_wealth = self.get_total_wealth() * 0.05
+        max_num_of_stocks = max_risk_wealth / price
+        if direction == "buy":
+            # Ensure the order size is within the available cash
+            max_stocks_cash = round(self.cash / price)
+            num_of_stocks = min(max_num_of_stocks, max_stocks_cash)
+        else:
+            # Ensure agent owns sold stocks (no short-sellling)
+            own_num_of_stocks = round(self.num_of_shares)
+            num_of_stocks = min(own_num_of_stocks, max_num_of_stocks)
        
         # Adjust the order size based on risk appetite
-        if self.risk_appetit <= 0.1:
-            num_of_stocks = max(1, round(num_of_stocks / 10))
-        elif self.risk_appetit > 0.1 and self.risk_appetit <= 0.2:
-            num_of_stocks = max(1, round(num_of_stocks / 8))
-        elif self.risk_appetit > 0.2 and self.risk_appetit <= 0.3:
-            num_of_stocks = max(1, round(num_of_stocks / 6))
-        elif self.risk_appetit > 0.3 and self.risk_appetit <= 0.4:
-            num_of_stocks = max(1, round(num_of_stocks / 5))
-        elif self.risk_appetit > 0.4 and self.risk_appetit <= 0.5:
-            num_of_stocks = max(1, round(num_of_stocks / 4))
-        elif self.risk_appetit > 0.5 and self.risk_appetit <= 0.6:
-            num_of_stocks = max(1, round(num_of_stocks / 3.5))
-        elif self.risk_appetit > 0.6 and self.risk_appetit <= 0.7:
-            num_of_stocks = max(1, round(num_of_stocks / 3))
-        elif self.risk_appetit > 0.7 and self.risk_appetit <= 0.8:
-            num_of_stocks = max(1, round(num_of_stocks / 2.5))
-        elif self.risk_appetit > 0.8 and self.risk_appetit <= 0.9:
+        if self.risk_appetit < 0.5:
             num_of_stocks = max(1, round(num_of_stocks / 2))
-        elif self.risk_appetit > 0.9 and self.risk_appetit <= 1:
-            num_of_stocks = max(1, round(num_of_stocks / 1.5))
 
-        return abs(num_of_stocks) * (1 if direction == "buy" else -1)  # Return positive for buy, negative for sell
+
+        return abs(round(num_of_stocks)) * (1 if direction == "buy" else -1)  # Return positive for buy, negative for sell
 
 
     def get_limit_price(self, order_type):
         """
         Returns the limit price for the order.
         """
-        # Example logic for determining the limit price
-        safety_margin = self.estimated_true_value * 0.02
-        if order_type == "buy":
-            return round(self.estimated_true_value - self.risk_aversion * safety_margin, 2)
-        else:
-            return round(self.estimated_true_value + self.risk_aversion * safety_margin, 2)
+
+        return round(self.estimated_true_value, 2)
+    
+        # # Example logic for determining the limit price
+        # safety_margin = self.estimated_true_value * 0.02
+        # if order_type == "buy":
+        #     return round(self.estimated_true_value - self.risk_aversion * safety_margin, 2)
+        # else:
+        #     return round(self.estimated_true_value + self.risk_aversion * safety_margin, 2)
 
 
     
